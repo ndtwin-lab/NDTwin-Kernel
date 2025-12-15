@@ -1,0 +1,62 @@
+/*
+ * Copyright (c) 2025-present
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * The NDTwin Authors and Contributors:
+ *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
+ *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
+ *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ */
+#include "ndt_core/routing_management/Controller.hpp"
+#include "ndt_core/routing_management/FlowRoutingManager.hpp"
+
+Controller::Controller(std::shared_ptr<FlowRoutingManager> flowRoutingManager)
+    : m_flowRoutingManager(std::move(flowRoutingManager)),
+      dispatcher_(
+          // SenderFn: batch send using your existing flow manager
+          [this](const std::vector<FlowJob>& batch) {
+              for (const auto& job : batch)
+              {
+                  switch (job.op)
+                  {
+                  case FlowOp::Install:
+                      m_flowRoutingManager->installAnEntry(job.dpid,
+                                                           job.priority,
+                                                           job.match,
+                                                           job.actions,
+                                                           job.idleTimeout);
+                      break;
+                  case FlowOp::Modify:
+                      m_flowRoutingManager->modifyAnEntry(job.dpid,
+                                                          job.priority,
+                                                          job.match,
+                                                          job.actions);
+                      break;
+                  case FlowOp::Delete:
+                      m_flowRoutingManager->deleteAnEntry(job.dpid, job.match);
+                      break;
+                  }
+              }
+              // (Optional) fence/Barrier here if your southbound supports it
+          },
+          /*burstSize*/ 2000,
+          /*fencePerBurst*/ false)
+{
+    dispatcher_.start();
+}
+
+Controller::~Controller()
+{
+    dispatcher_.stop();
+}
