@@ -1836,17 +1836,16 @@ HttpSession::handleAcquireLock(http::response<http::string_body>& res)
         bool success = m_lockManager->acquireLock(lockType, ttl);
 
         if (success)
-        {   
-            SPDLOG_LOGGER_INFO(Logger::instance(), "Get Lock Sucessed");
+        {
             res.result(http::status::ok);
             res.body() = json{{"status", "locked"}, {"type", lockType}, {"ttl", ttl}}.dump();
         }
         else
-        {   // Locked by another app or invalid type
-            SPDLOG_LOGGER_INFO(Logger::instance(), "Get Lock Failed");
+        {
+            // Locked by another app or invalid type
             res.result(http::status::locked);
             res.body() = json{{"error", "Lock acquisition failed"},
-                              {"detail", "The lock has been called by the other application" + lockType}}
+                              {"detail", "System busy or invalid lock type: " + lockType}}
                              .dump();
         }
     }

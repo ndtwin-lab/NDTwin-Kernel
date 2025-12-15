@@ -57,13 +57,15 @@ using json = nlohmann::json;
 
 DeviceConfigurationAndPowerManager::DeviceConfigurationAndPowerManager(
     shared_ptr<TopologyAndFlowMonitor> topoMonitor,
-    int mode)
+    int mode,
+    std::string gwUrl)
     : m_topologyAndFlowMonitor(std::move(topoMonitor)),
       m_mode(static_cast<utils::DeploymentMode>(mode)),
       m_cachedPowerReport(nlohmann::json::array()),
       m_cachedCpuReport(nlohmann::json::object()),
       m_cachedMemoryReport(nlohmann::json::object()),
-      m_cachedTemperatureReport(nlohmann::json::object())
+      m_cachedTemperatureReport(nlohmann::json::object()),
+      GW_IP(gwUrl)
 {
 }
 
@@ -528,7 +530,6 @@ DeviceConfigurationAndPowerManager::fetchOpenFlowTablesInternal()
                            dpid,
                            cmd);
 
-        // TODO: Check whether flows is empty or not
         std::string raw = utils::execCommand(cmd);
         SPDLOG_LOGGER_DEBUG(spdlog::default_logger(),
                             "DeviceManager: raw response for {}: {}",
@@ -827,7 +828,9 @@ DeviceConfigurationAndPowerManager::setPowerStateTestbed(const SwitchInfo& si,
     //   index    = the plug number
     //   method   = action
     auto cmd = fmt::format("curl -s -X POST "
-                           "\"http://10.10.10.1:8000/relay"
+                           "\"http://",
+                           GW_IP,
+                           ":8000/relay",
                            "?ip={}"
                            "&resource=outlet"
                            "&index={}"
@@ -1309,7 +1312,7 @@ DeviceConfigurationAndPowerManager::openflowTablesUpdateWorker()
 
             // 2. Lock and update caches (FAST part)
             {
-                std::lock_guard<std::shared_mutex> lock(m_openflowTablesMutex);
+                std::lock_guard<std::shared_mutex> lock(m_statusMutex);
                 m_cachedOpenFlowTables = std::move(newTables);
             }
         }
@@ -1373,7 +1376,7 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
     const auto& mods = j.value("modify_flow_entries", json::array());
     const auto& dels = j.value("delete_flow_entries", json::array());
 
-    std::lock_guard<std::shared_mutex> lock(m_openflowTablesMutex);
+    std::lock_guard<std::shared_mutex> lock(m_statusMutex);
 
     // Get (or create) the flow array for a given dpid.
     auto getFlowsArrayForDpid = [this](uint64_t dpid) -> json&
@@ -1399,10 +1402,10 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
     // Build or match identifier fields for a flow.
     auto extractKey = [](const json& e)
     {
-        // int priority = e.value("priority", 0);
+        int priority = e.value("priority", 0);
         int eth_type = e.at("match").value("eth_type", 0);
         std::string ipv4_dst = e.at("match").value("ipv4_dst", "");
-        return std::tuple<int,std::string>{eth_type, ipv4_dst};
+        return std::tuple<int,int,std::string>{priority, eth_type, ipv4_dst};
     };
 
     // --- INSTALL ---
@@ -1414,10 +1417,6 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
         newFlow["priority"] = e.at("priority");
         newFlow["match"]    = e.at("match");
         newFlow["actions"]  = e.at("actions");
-        newFlow["packet_count"]  = 0;
-        newFlow["byte_count"]  = 0;
-        newFlow["duration_sec"]  = 0;
-        // newFlow["duration_nsec"]  = 0;
         // If your real flow stats have more fields (cookie, table_id, etc.),
         // you can add them here as needed.
 

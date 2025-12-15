@@ -40,12 +40,13 @@
 #include <unordered_map>               // for unordered_map
 #include <utility>                     // for pair
 #include <vector>                      // for vector
+#include "utils/AppConfig.hpp"
 
 // We don't need to use constexpr std::string_view
 // Cuz the files are used for ifstream (which needs std::string as the param type)
 // static const std::string TOPOLOGY_FILE = "../StaticNetworkTopology_ipAlias4_10Switches.json";
-static const std::string TOPOLOGY_FILE =
-    "../StaticNetworkTopology_ipAlias4_9Switches_all_1g_cable.json";
+static const std::string TOPOLOGY_FILE = AppConfig::TOPOLOGY_FILE;
+    
 static const std::string TOPOLOGY_FILE_MININET = "../StaticNetworkTopologyMininet_10Switches.json";
 
 static constexpr uint64_t EMPTY_LINK_THRESHOLD = 700000000;

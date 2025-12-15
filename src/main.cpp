@@ -44,10 +44,12 @@
 #include <shared_mutex>
 #include <string>
 #include <thread>
+#include "utils/AppConfig.hpp"
 
 // TODO[OPTIMIZATION]: Third-party api url
 std::string thirdPartyUrlForRouting = "http://localhost:5000/fair_share_path";
-std::string SIM_SERVER_URL = "http://10.10.10.5:9000/submit";
+std::string SIM_SERVER_URL = AppConfig::SIM_SERVER_URL;
+std::string GW_IP = AppConfig::GW_IP;
 
 static std::atomic<bool> gShutdownRequested{false};
 
@@ -135,7 +137,7 @@ main(int argc, char* argv[])
         std::make_shared<TopologyAndFlowMonitor>(graph, graphMutex, eventBus, mode);
 
     deviceConfigurationAndPowerManager =
-        std::make_shared<DeviceConfigurationAndPowerManager>(topologyAndFlowMonitor, mode);
+        std::make_shared<DeviceConfigurationAndPowerManager>(topologyAndFlowMonitor, mode, GW_IP);
 
     auto collector =
         std::make_shared<sflow::FlowLinkUsageCollector>(topologyAndFlowMonitor,
@@ -151,12 +153,12 @@ main(int argc, char* argv[])
                                                               collector,
                                                               eventBus);
 
-    //std::string openaiModel = promptOpenAIModel();
-    //auto intentTranslator = std::make_shared<IntentTranslator>(deviceConfigurationAndPowerManager,
-    //                                                           topologyAndFlowMonitor,
-    //                                                           flowRoutingManager,
-    //                                                           collector,
-    //                                                           openaiModel);
+    std::string openaiModel = promptOpenAIModel();
+    auto intentTranslator = std::make_shared<IntentTranslator>(deviceConfigurationAndPowerManager,
+                                                               topologyAndFlowMonitor,
+                                                               flowRoutingManager,
+                                                               collector,
+                                                               openaiModel);
 
     auto appManager = std::make_shared<ApplicationManager>("/srv/nfs/sim", "/mnt");
 
@@ -178,7 +180,7 @@ main(int argc, char* argv[])
                                                          eventBus,
                                                          appManager,
                                                          simManager,
-                                                         nullptr,//intentTranslator,
+                                                         intentTranslator,
                                                          historicalDataManager,
                                                          controller,
                                                          lockManager,

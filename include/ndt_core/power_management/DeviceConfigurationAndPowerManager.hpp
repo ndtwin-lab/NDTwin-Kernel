@@ -57,7 +57,7 @@ class DeviceConfigurationAndPowerManager
 {
   public:
     DeviceConfigurationAndPowerManager(std::shared_ptr<TopologyAndFlowMonitor> topoMonitor,
-                                       int mode);
+                                       int mode, std::string gwUrl);
 
     /**
      * Handle a get_switches_power_state request.
@@ -147,4 +147,6 @@ class DeviceConfigurationAndPowerManager
     json m_cachedMemoryReport;
     json m_cachedTemperatureReport;
     json m_cachedOpenFlowTables;
+
+    std::string GW_IP;
 };

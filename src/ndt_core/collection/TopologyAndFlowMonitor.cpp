@@ -333,6 +333,8 @@ TopologyAndFlowMonitor::updateSwitches(const string& topologyData)
             string switchDpidStr = switchInfoJson.value("dpid", "");
             uint64_t switchDpidUint64 = stoull(switchDpidStr, nullptr, 16);
 
+            SPDLOG_LOGGER_INFO(Logger::instance(), "switchDpidStr {} switchDpidUint64 {}", switchDpidStr, switchDpidUint64);
+
             // Update switch isUp status
             // Keep Thread Safe
             {
