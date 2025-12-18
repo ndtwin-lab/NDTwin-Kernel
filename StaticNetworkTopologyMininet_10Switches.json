@@ -13,7 +13,21 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 1
+            },
+            {
+              "type": "port",
+              "port_id": 2
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -28,7 +42,21 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 1
+            },
+            {
+              "type": "port",
+              "port_id": 2
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -43,7 +71,21 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 1
+            },
+            {
+              "type": "port",
+              "port_id": 2
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -58,7 +100,21 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 1
+            },
+            {
+              "type": "port",
+              "port_id": 2
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -73,7 +129,21 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 3
+            },
+            {
+              "type": "port",
+              "port_id": 4
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -88,7 +158,21 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 3
+            },
+            {
+              "type": "port",
+              "port_id": 4
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -103,7 +187,21 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 3
+            },
+            {
+              "type": "port",
+              "port_id": 4
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -118,7 +216,21 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 3
+            },
+            {
+              "type": "port",
+              "port_id": 4
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -133,7 +245,33 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 1
+            },
+            {
+              "type": "port",
+              "port_id": 2
+            }
+          ]
+        },
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 3
+            },
+            {
+              "type": "port",
+              "port_id": 4
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "OVS",
@@ -148,7 +286,33 @@
       "mac": 0,
       "smart_plug_ip": "",
       "smart_plug_outlet": 0,
-      "vertex_type": 0
+      "vertex_type": 0,
+      "ecmp_groups": [
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 1
+            },
+            {
+              "type": "port",
+              "port_id": 2
+            }
+          ]
+        },
+        {
+          "members": [
+            {
+              "type": "port",
+              "port_id": 3
+            },
+            {
+              "type": "port",
+              "port_id": 4
+            }
+          ]
+        }
+      ]
     },
     {
       "brand_name": "",

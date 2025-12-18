@@ -21,7 +21,7 @@
 
 // ndt_core/power_management/DeviceConfigurationAndPowerManager.cpp
 #include "ndt_core/power_management/DeviceConfigurationAndPowerManager.hpp"
-#include "common_types/GraphTypes.hpp" // for VertexProp...
+#include "common_types/GraphTypes.hpp"                    // for VertexProp...
 #include "ndt_core/collection/TopologyAndFlowMonitor.hpp" // for TopologyAn...
 #include "nlohmann/json.hpp"                              // for basic_json
 #include "spdlog/spdlog-inl.h"                            // for default_lo...
@@ -82,7 +82,8 @@ DeviceConfigurationAndPowerManager::start()
     this->m_running.store(true);
     m_pingThread = thread(&DeviceConfigurationAndPowerManager::pingWorker, this, 1);
     m_statusUpdateThread = thread(&DeviceConfigurationAndPowerManager::statusUpdateWorker, this);
-    m_openflowTablesUpdateThread = thread(&DeviceConfigurationAndPowerManager::openflowTablesUpdateWorker, this);
+    m_openflowTablesUpdateThread =
+        thread(&DeviceConfigurationAndPowerManager::openflowTablesUpdateWorker, this);
 }
 
 void
@@ -828,13 +829,12 @@ DeviceConfigurationAndPowerManager::setPowerStateTestbed(const SwitchInfo& si,
     //   index    = the plug number
     //   method   = action
     auto cmd = fmt::format("curl -s -X POST "
-                           "\"http://",
-                           GW_IP,
-                           ":8000/relay",
+                           "\"http://{}:8000/relay"
                            "?ip={}"
                            "&resource=outlet"
                            "&index={}"
                            "&method={}\"",
+                           GW_IP,
                            si.plug_ip,
                            si.plug_idx,
                            action);
@@ -1318,7 +1318,9 @@ DeviceConfigurationAndPowerManager::openflowTablesUpdateWorker()
         }
         catch (const std::exception& e)
         {
-            SPDLOG_LOGGER_ERROR(Logger::instance(), "Error in openflowTablesUpdateWorker: {}", e.what());
+            SPDLOG_LOGGER_ERROR(Logger::instance(),
+                                "Error in openflowTablesUpdateWorker: {}",
+                                e.what());
         }
 
         // 3. Sleep for 10 seconds (in an interruptible way)
@@ -1368,19 +1370,17 @@ DeviceConfigurationAndPowerManager::getOpenFlowTables()
     return m_cachedOpenFlowTables;
 }
 
-
 void
 DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
 {
-    const auto& ins  = j.value("install_flow_entries", json::array());
+    const auto& ins = j.value("install_flow_entries", json::array());
     const auto& mods = j.value("modify_flow_entries", json::array());
     const auto& dels = j.value("delete_flow_entries", json::array());
 
     std::lock_guard<std::shared_mutex> lock(m_statusMutex);
 
     // Get (or create) the flow array for a given dpid.
-    auto getFlowsArrayForDpid = [this](uint64_t dpid) -> json&
-    {
+    auto getFlowsArrayForDpid = [this](uint64_t dpid) -> json& {
         for (auto& sw : m_cachedOpenFlowTables)
         {
             if (sw.at("dpid").get<uint64_t>() == dpid)
@@ -1400,23 +1400,21 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
     };
 
     // Build or match identifier fields for a flow.
-    auto extractKey = [](const json& e)
-    {
+    auto extractKey = [](const json& e) {
         int priority = e.value("priority", 0);
         int eth_type = e.at("match").value("eth_type", 0);
         std::string ipv4_dst = e.at("match").value("ipv4_dst", "");
-        return std::tuple<int,int,std::string>{priority, eth_type, ipv4_dst};
+        return std::tuple<int, int, std::string>{priority, eth_type, ipv4_dst};
     };
 
     // --- INSTALL ---
-    auto installOne = [&](const json& e)
-    {
+    auto installOne = [&](const json& e) {
         uint64_t dpid = e.at("dpid").get<uint64_t>();
 
         json newFlow;
         newFlow["priority"] = e.at("priority");
-        newFlow["match"]    = e.at("match");
-        newFlow["actions"]  = e.at("actions");
+        newFlow["match"] = e.at("match");
+        newFlow["actions"] = e.at("actions");
         // If your real flow stats have more fields (cookie, table_id, etc.),
         // you can add them here as needed.
 
@@ -1425,8 +1423,7 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
     };
 
     // --- MODIFY ---
-    auto modifyOne = [&](const json& e)
-    {
+    auto modifyOne = [&](const json& e) {
         uint64_t dpid = e.at("dpid").get<uint64_t>();
         auto key = extractKey(e);
 
@@ -1438,8 +1435,8 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
             {
                 // Update fields; we assume match+priority identifies the rule.
                 f["priority"] = e.at("priority");
-                f["match"]    = e.at("match");
-                f["actions"]  = e.at("actions");
+                f["match"] = e.at("match");
+                f["actions"] = e.at("actions");
                 // If you may have multiple identical rules, remove this break.
                 break;
             }
@@ -1447,26 +1444,30 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
     };
 
     // --- DELETE ---
-    auto deleteOne = [&](const json& e)
-    {
+    auto deleteOne = [&](const json& e) {
         uint64_t dpid = e.at("dpid").get<uint64_t>();
         auto key = extractKey(e);
 
         json& flows = getFlowsArrayForDpid(dpid);
-        auto it = std::remove_if(flows.begin(), flows.end(),
-                                 [&](const json& f) {
-                                     return extractKey(f) == key;
-                                 });
+        auto it = std::remove_if(flows.begin(), flows.end(), [&](const json& f) {
+            return extractKey(f) == key;
+        });
         flows.erase(it, flows.end());
     };
 
     // Apply all operations
     for (const auto& e : ins)
+    {
         installOne(e);
+    }
 
     for (const auto& e : mods)
+    {
         modifyOne(e);
+    }
 
     for (const auto& e : dels)
+    {
         deleteOne(e);
+    }
 }
