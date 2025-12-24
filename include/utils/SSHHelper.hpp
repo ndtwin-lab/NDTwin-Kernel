@@ -19,7 +19,6 @@
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
  */
 
-// utils/SSHHelper.hpp
 #pragma once
 #include <array>
 #include <cstdint>
@@ -28,8 +27,28 @@
 #include <stdexcept>
 #include <string>
 
-// This version simulates a user typing and waiting between commands.
-// It uses standard shell tools (echo, sleep, |) and requires no new installations.
+/**
+ * @brief Fetch raw power-status output from a switch via SSH.
+ *
+ * Builds a non-interactive SSH command that feeds a small sequence of CLI commands
+ * into the remote switch (e.g., "terminal length 0", "show power") and captures
+ * the resulting stdout text.
+ *
+ * Implementation notes:
+ *  - Uses popen() to execute a shell pipeline:
+ *      (echo ...; sleep ...; echo ...) | ssh ...
+ *  - Adds SSH options to improve compatibility with older switch SSH stacks
+ *    (KexAlgorithms/Ciphers/HostKeyAlgorithms).
+ *  - Disables strict host key checking to avoid interactive prompts.
+ *
+ * @param ip        Switch management IP address.
+ * @param username  SSH username for the switch.
+ * @return Full raw CLI output (stdout) as a string.
+ * @throws std::runtime_error if popen() fails.
+ *
+ * @warning This function executes a shell command. Ensure @p ip and @p username are
+ *          trusted or sanitized to prevent shell injection.
+ */
 inline std::string
 getPowerReportViaSsh(const std::string& ip, const std::string& username)
 {
@@ -69,7 +88,19 @@ getPowerReportViaSsh(const std::string& ip, const std::string& username)
     return result_stream.str();
 }
 
-// The parser function is also correct and remains the same.
+/**
+ * @brief Parse power value from the switch CLI output.
+ *
+ * Scans the CLI output for a known line prefix (targetPrefix) and attempts to read
+ * a numeric power value from that line. Returns a scaled value (implementation-defined).
+ *
+ * @param output Raw CLI output returned by getPowerReportViaSsh().
+ * @return Parsed power value (scaled), or 0 if not found or parsing fails.
+ *
+ * @note This parser relies on a fixed string prefix (targetPrefix) that must match
+ *       the switch model/output format. If the CLI format changes, update the prefix
+ *       and parsing logic accordingly.
+ */
 inline uint64_t
 parsePowerOutput(const std::string& output)
 {

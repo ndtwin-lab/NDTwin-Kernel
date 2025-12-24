@@ -158,7 +158,7 @@ DeviceConfigurationAndPowerManager::queryTestbed(const std::string& ipParam) con
     {
         auto it = std::find_if(switchSmartPlugTable.begin(),
                                switchSmartPlugTable.end(),
-                               [&](auto& si) { return si.switch_ip == ipParam; });
+                               [&](auto& si) { return si.switchIp == ipParam; });
         if (it == switchSmartPlugTable.end())
         {
             throw std::runtime_error("Unknown switch IP");
@@ -175,8 +175,8 @@ DeviceConfigurationAndPowerManager::queryTestbed(const std::string& ipParam) con
             std::ostringstream cmd;
             cmd << "curl -k -s -X GET "
                 // wrap in quotes so shell doesn’t split on & ? etc.
-                << "\"http://10.10.10.1:8000/relay" << "?ip=" << si.plug_ip << "&resource=outlet"
-                << "&index=" << si.plug_idx << "\"";
+                << "\"http://10.10.10.1:8000/relay" << "?ip=" << si.plugIp << "&resource=outlet"
+                << "&index=" << si.plugIdx << "\"";
 
             std::string raw = utils::execCommand(cmd.str());
 
@@ -210,15 +210,15 @@ DeviceConfigurationAndPowerManager::queryTestbed(const std::string& ipParam) con
                 }
             }
 
-            result[si.switch_ip] = status;
+            result[si.switchIp] = status;
         }
         catch (const std::exception& e)
         {
             SPDLOG_LOGGER_ERROR(Logger::instance(),
                                 "Error querying plug on {}: {}",
-                                si.switch_ip,
+                                si.switchIp,
                                 e.what());
-            result[si.switch_ip] = "error";
+            result[si.switchIp] = "error";
         }
     }
 
@@ -401,7 +401,7 @@ DeviceConfigurationAndPowerManager::setSwitchPowerState(std::string ip,
         cmd << "curl -s -X POST " << "-H \"Host: 127.0.0.1\" "
             << "-H \"User-Agent: Beast-C++-Client\" "
             // Quote full URL so shell expands safely
-            << "\"http://10.10.10.1:8000/relay?ip=" << si.plug_ip << "&index=" << si.plug_idx
+            << "\"http://10.10.10.1:8000/relay?ip=" << si.plugIp << "&index=" << si.plugIdx
             << "&method=" << action << "\"";
 
         // 2) Execute and grab raw HTML response
@@ -798,7 +798,7 @@ DeviceConfigurationAndPowerManager::setSwitchPowerState(const std::string& ip,
         // find the SwitchInfo entry
         auto it = std::find_if(switchSmartPlugTable.begin(),
                                switchSmartPlugTable.end(),
-                               [&](const auto& si) { return si.switch_ip == ip; });
+                               [&](const auto& si) { return si.switchIp == ip; });
         if (it == switchSmartPlugTable.end())
         {
             SPDLOG_LOGGER_DEBUG(Logger::instance(), "switch not found {}", ip);
@@ -820,7 +820,7 @@ bool
 DeviceConfigurationAndPowerManager::setPowerStateTestbed(const SwitchInfo& si,
                                                          const std::string& action)
 {
-    SPDLOG_LOGGER_INFO(Logger::instance(), "TESTBED: setting switch {} → {}", si.switch_ip, action);
+    SPDLOG_LOGGER_INFO(Logger::instance(), "TESTBED: setting switch {} → {}", si.switchIp, action);
 
     // we’ll always talk to your Flask relay on 10.10.10.1:8000
     // pass:
@@ -835,8 +835,8 @@ DeviceConfigurationAndPowerManager::setPowerStateTestbed(const SwitchInfo& si,
                            "&index={}"
                            "&method={}\"",
                            GW_IP,
-                           si.plug_ip,
-                           si.plug_idx,
+                           si.plugIp,
+                           si.plugIdx,
                            action);
 
     int rc = std::system(cmd.c_str());

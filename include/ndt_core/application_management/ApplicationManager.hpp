@@ -30,6 +30,25 @@
 
 namespace fs = std::filesystem;
 
+
+/**
+ * @brief Manages per-application registration and NFS-backed workspace setup.
+ *
+ * ApplicationManager assigns a unique application ID to each registered client,
+ * maintains metadata such as the simulation-completed callback URL, and
+ * provisions an isolated per-app directory under the configured NFS export
+ * directory (e.g., /srv/nfs/sim/<appId>/).
+ *
+ * It updates NFS server configuration to export/mount the per-app directory,
+ * reloads the NFS server when required, and performs cleanup of application
+ * folders and stale NFS entries. All public APIs are thread-safe via an
+ * internal mutex.
+ *
+ * Typical usage:
+ *  - registerApplication() to obtain an appId and store the callback URL
+ *  - setupNFSForApp(appId) to create/export/mount the app workspace
+ *  - getSimulationCompletedUrl(appId) to retrieve the callback URL later
+ */
 class ApplicationManager
 {
   public:

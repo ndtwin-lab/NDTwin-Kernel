@@ -19,7 +19,6 @@
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
  */
 
-// ndt_core/power_management/DeviceConfigurationAndPowerManager.hpp
 #pragma once
 
 #include "utils/Utils.hpp"   // for DeploymentMode
@@ -38,58 +37,160 @@ class TopologyAndFlowMonitor; // lines 34-34
 using json = nlohmann::json;
 
 /**
- * SwitchInfo describes mapping between switch IP and smart plug details.
+ * @brief Mapping between a switch management IP and its smart plug control endpoint.
+ *
+ * Used in TESTBED mode to power on/off a physical switch through a smart plug relay.
  */
 struct SwitchInfo
 {
-    std::string switch_ip;
-    std::string plug_ip;
-    int plug_idx;
+    std::string switchIp;
+    std::string plugIp;
+    int plugIdx;
 };
 
 // This should align with real-world smart plug configuration
 
 /**
- * DeviceConfigurationAndPowerManager centralizes querying switch power state
- * either via TESTBED (real hardware) or MININET (simulator).
+ * @brief Central manager for switch power control and device status telemetry.
+ *
+ * DeviceConfigurationAndPowerManager provides a unified interface to:
+ *  - query and toggle switch power state (TESTBED: via smart plug / gateway; MININET: via
+ * simulator),
+ *  - periodically collect and cache device health metrics (power, CPU, memory, temperature),
+ *  - fetch and cache OpenFlow table snapshots for switches, and
+ *  - expose results in JSON form for REST/API handlers.
+ *
+ * The class runs background worker threads when start() is called:
+ *  - a ping worker to track reachability (optional/implementation-defined),
+ *  - a status update worker that refreshes cached telemetry,
+ *  - an OpenFlow table update worker that refreshes cached flow tables.
+ *
+ * Concurrency:
+ *  - Cached status JSON is protected by m_statusMutex (shared_mutex).
+ *  - Cached OpenFlow tables are protected by m_openflowTablesMutex.
+ *  - Public getters return snapshots from the cache.
+ *
+ * Deployment:
+ *  - TESTBED mode controls real hardware using the smart plug table and GW_IP gateway URL.
+ *  - MININET mode derives state from the simulator (e.g., OVS/Mininet topology).
  */
 class DeviceConfigurationAndPowerManager
 {
   public:
+    /**
+     * @brief Construct the device manager.
+     *
+     * @param topoMonitor Topology monitor used for mapping/lookup (e.g., IP<->switch).
+     * @param mode        Deployment mode (TESTBED / MININET).
+     * @param gwUrl       Gateway URL/IP used to reach the testbed control service (TESTBED).
+     */
     DeviceConfigurationAndPowerManager(std::shared_ptr<TopologyAndFlowMonitor> topoMonitor,
-                                       int mode, std::string gwUrl);
+                                       int mode,
+                                       std::string gwUrl);
 
     /**
-     * Handle a get_switches_power_state request.
-     * @param target full request target, e.g. "/ndt/get_switches_power_state?ip=..."
-     * @return JSON mapping switch IP → "ON"/"OFF"/"error"
-     * @throws runtime_error if ip is unknown
+     * @brief Query power state for one or more switches.
+     *
+     * Parses the "ip" query parameter from @p target. If ip is omitted or indicates
+     * "all" (implementation-defined), it returns states for all known switches.
+     *
+     * @param target Full request target, e.g. "/ndt/get_switches_power_state?ip=10.10.10.12".
+     * @return JSON mapping switch IP -> state string (e.g., "ON", "OFF", "error").
+     * @throws std::runtime_error if the requested IP is unknown or not resolvable.
      */
     json getSwitchesPowerState(const std::string& target);
+
+    /**
+     * @brief Toggle power for a specific switch using a provided SwitchInfo record.
+     *
+     * Primarily intended for TESTBED mode where the plug endpoint is already known.
+     *
+     * @param ip     Switch IP address (typically matches si.switch_ip).
+     * @param action "on" or "off".
+     * @param si     Smart plug mapping for this switch.
+     * @return true on success; false on failure.
+     */
     bool setSwitchPowerState(std::string ip, std::string action, SwitchInfo si);
 
-    json getPowerReport();
-    json getMemoryUtilization();
-    json getOpenFlowTables();
-    // first element in tuple -> dst ip, second -> output port, third -> priority
-
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>>
-    getOpenFlowTable(uint64_t dpid = 0);
-    json getCpuUtilization();
-    json getTemperature();
-
-    /// Toggle power for the given switch IP ("on" or "off").
-    /// Returns true on success, false if IP not found or the operation failed.
+    /**
+     * @brief Toggle power for a switch using the appropriate backend.
+     *
+     * @param ip     Switch IP address.
+     * @param action "on" or "off" (case handling is implementation-defined).
+     * @return true on success; false if the IP is unknown or the operation fails.
+     */
     bool setSwitchPowerState(const std::string& ip, const std::string& action);
 
-    // For llm
-    json getSingleSwitchPowerReport(const std::string& deviceIdentifier);
-    json getSingleSwitchCpuReport(const std::string& deviceIdentifier);
-    // For llm
+    /**
+     * @brief Get the latest cached power report for all devices.
+     *
+     * @return JSON snapshot of the most recent power report.
+     */
+    json getPowerReport();
+    /**
+     * @brief Get the latest cached memory utilization report.
+     */
+    json getMemoryUtilization();
+    /**
+     * @brief Get the latest cached OpenFlow table snapshot as JSON.
+     *
+     * @return JSON describing OpenFlow tables for switches (schema implementation-defined).
+     */
+    json getOpenFlowTables();
 
+    /**
+     * @brief Get parsed OpenFlow table entries as a structured map.
+     *
+     * @param dpid If non-zero, return entries only for the specified switch DPID.
+     *             If zero, return entries for all switches.
+     * @return Map: dpid -> list of (dstIp, outPort, priority) tuples.
+     */
+    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>>
+    getOpenFlowTable(uint64_t dpid = 0);
+    /**
+     * @brief Get the latest cached CPU utilization report.
+     */
+    json getCpuUtilization();
+    /**
+     * @brief Get the latest cached temperature report.
+     */
+    json getTemperature();
+
+    /**
+     * @brief Get the cached power report for one device/switch.
+     *
+     * @param deviceIdentifier Switch identifier (IP, name, or DPID depending on implementation).
+     * @return JSON report for the specified device, or an error JSON if unknown.
+     */
+    json getSingleSwitchPowerReport(const std::string& deviceIdentifier);
+    /**
+     * @brief Get the cached CPU report for one device/switch.
+     *
+     * @param deviceIdentifier Switch identifier (IP, name, or DPID depending on implementation).
+     * @return JSON report for the specified device, or an error JSON if unknown.
+     */
+    json getSingleSwitchCpuReport(const std::string& deviceIdentifier);
+
+    /**
+     * @brief Update cached OpenFlow tables with externally provided JSON.
+     *
+     * Useful when another subsystem fetches OpenFlow state and pushes it into this manager.
+     *
+     * @param j OpenFlow table JSON snapshot.
+     */
     void updateOpenFlowTables(const json& j);
 
+    /**
+     * @brief Start background workers that refresh cached status and OpenFlow tables.
+     *
+     * Launches m_pingThread, m_statusUpdateThread and m_openflowTablesUpdateThread.
+     */
     void start();
+    /**
+     * @brief Stop all background workers and release resources.
+     *
+     * Signals shutdown, joins threads, and leaves cached values intact.
+     */
     void stop();
 
   private:

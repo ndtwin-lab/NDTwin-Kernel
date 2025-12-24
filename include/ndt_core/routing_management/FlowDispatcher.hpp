@@ -29,21 +29,88 @@
 #include <unordered_map>
 #include <vector>
 
+/**
+ * @brief Per-switch (per-DPID) flow job dispatcher with batching.
+ *
+ * FlowDispatcher decouples flow-programming requests (FlowJob) from the caller thread by
+ * queueing jobs and sending them asynchronously to a provided southbound sender function.
+ *
+ * Design:
+ *  - Maintains one FIFO queue per switch DPID (queues_).
+ *  - Spawns one worker thread per active DPID (workers_) that drains its queue.
+ *  - Sends jobs in batches (bursts) up to burstSize_ to reduce overhead.
+ *
+ * The sender callback is responsible for actually applying the batch (e.g., install/modify/delete
+ * OpenFlow entries) and for any additional synchronization with the controller datapath.
+ *
+ * Concurrency:
+ *  - enqueue() is thread-safe.
+ *  - Workers block on a condition variable when no work is available.
+ *  - start()/stop() control the lifetime of worker threads.
+ *
+ * Ordering:
+ *  - Jobs targeting the same DPID are processed in FIFO order.
+ *  - Different DPIDs are processed independently (parallelism across switches).
+ */
 class FlowDispatcher
 {
   public:
     using SenderFn = std::function<void(const std::vector<FlowJob>& batch)>;
 
+    /**
+     * @brief Construct a dispatcher.
+     *
+     * @param sender        Callback invoked by worker threads to send a batch of jobs.
+     * @param burstSize     Max number of jobs to send per batch (per DPID) before yielding.
+     * @param fencePerBurst If true, enforces a "fence" between bursts (implementation-defined),
+     *                      typically used to guarantee completion/ordering semantics across
+     * batches.
+     */
     explicit FlowDispatcher(SenderFn sender, size_t burstSize = 2000, bool fencePerBurst = false);
+
+    /**
+     * @brief Stop workers and release resources.
+     *
+     * Equivalent to calling stop() if still running.
+     */
     ~FlowDispatcher();
 
+    /**
+     * @brief Start the dispatcher.
+     *
+     * Enables worker processing (running_=true). Worker threads are created lazily
+     * when jobs for a new DPID are first enqueued (common pattern), or eagerly if
+     * implemented that way in the .cpp.
+     */
     void start();
+    /**
+     * @brief Stop the dispatcher and join worker threads.
+     *
+     * Signals all workers to exit, wakes them via cv_, and joins all threads.
+     * Safe to call multiple times.
+     */
     void stop();
 
-    void enqueue(const FlowJob& job);        // single
+    /**
+     * @brief Enqueue a single flow job.
+     *
+     * Adds the job to the per-DPID queue and wakes the corresponding worker.
+     * If the worker for this DPID does not exist yet, it may be created.
+     *
+     * Thread-safe.
+     */
+    void enqueue(const FlowJob& job); // single
+    /**
+     * @brief Enqueue multiple flow jobs in bulk.
+     *
+     * Efficiently appends jobs to their per-DPID queues and wakes workers.
+     * Thread-safe.
+     */
     void enqueue(std::vector<FlowJob> jobs); // bulk
 
   private:
+    /// Worker thread for one DPID: waits for jobs, pops from queues_[dpid], and calls sender_ in
+    /// bursts.
     void workerLoop_(uint64_t dpid);
 
     // One queue per DPID
@@ -54,7 +121,7 @@ class FlowDispatcher
     std::condition_variable cv_;
     std::atomic<bool> running_{false};
 
-    // Sender = your southbound push (e.g., calls m_flowRoutingManager->install/modify/delete)
+    // Sender callback that applies a batch of FlowJobs to the datapath/controller.
     SenderFn sender_;
     size_t burstSize_;
     bool fencePerBurst_;

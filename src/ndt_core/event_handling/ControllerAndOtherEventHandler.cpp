@@ -115,11 +115,11 @@ ControllerAndOtherEventHandler::stop()
         return; // already stopped or stopping
     }
 
-    // 1) Call io_context::stop()
+    // 1. Call io_context::stop()
     m_ioContext.stop();
     SPDLOG_LOGGER_INFO(Logger::instance(), "io_context stopped");
 
-    // 2) Close the acceptor
+    // 2. Close the acceptor
     if (m_serverAcceptor)
     {
         boost::system::error_code ec;
@@ -131,7 +131,7 @@ ControllerAndOtherEventHandler::stop()
         }
     }
 
-    // 3) Close the socket - This is crucial for aborting read/write on an
+    // 3. Close the socket - This is crucial for aborting read/write on an
     // *already accepted* connection. If the thread was stuck in accept(), this
     // socket_ might not be connected yet, but close it defensively.
     {
@@ -185,7 +185,7 @@ ControllerAndOtherEventHandler::stop()
         SPDLOG_LOGGER_WARN(Logger::instance(), "Exception during poke attempt: {}", e.what());
     }
 
-    // 4) Wait for the server thread to finish
+    // 4. Wait for the server thread to finish
 
     if (m_serverThread.joinable())
     {

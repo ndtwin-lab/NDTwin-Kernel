@@ -43,17 +43,44 @@
 #include <string>
 #include <vector>
 
+/**
+ * @brief Common utility helpers used across NDTwin.
+ *
+ * This header provides small, header-only helpers for:
+ *  - deployment mode flags (MININET vs TESTBED),
+ *  - IPv4 and MAC address conversions,
+ *  - shell command execution (popen),
+ *  - HTTPS POST helper (Boost.Beast),
+ *  - timestamp helpers and formatting.
+ *
+ * @warning Some functions (execCommand, httpsPost) perform I/O and may throw.
+ * @warning Functions using inet_ntoa/localtime rely on non-thread-safe libc APIs.
+ *          Prefer thread-safe alternatives if called from multiple threads.
+ */
 namespace utils
 {
 
+/**
+ * @brief Indicates where NDTwin is running.
+ *
+ * MININET: simulated environment (Mininet/OVS).
+ * TESTBED: physical hardware testbed.
+ */
 enum DeploymentMode
 {
     MININET = 1,
     TESTBED = 2
 };
 
-/// Convert IPv4 address in host byte order (uint32_t) to dotted string.
-/// Throws on failure.
+/**
+ * @brief Convert an IPv4 address to dotted-decimal string.
+ *
+ * @param ip IPv4 address (expected in network byte order, i.e., in_addr.s_addr format).
+ * @return Dotted string (e.g., "10.10.10.12").
+ * @throws std::runtime_error if conversion fails.
+ *
+ * @warning Uses inet_ntoa(), which is not thread-safe.
+ */
 inline std::string
 ipToString(uint32_t ip)
 {
@@ -67,6 +94,15 @@ ipToString(uint32_t ip)
     return std::string(s);
 }
 
+/**
+ * @brief Convert a vector of IPv4 addresses to dotted-decimal strings.
+ *
+ * @param ipVec IPv4 addresses (expected in network byte order).
+ * @return Vector of dotted strings.
+ * @throws std::runtime_error on conversion failure.
+ *
+ * @warning Uses inet_ntoa(), which is not thread-safe.
+ */
 inline std::vector<std::string>
 ipToString(std::vector<uint32_t> ipVec)
 {
@@ -85,8 +121,13 @@ ipToString(std::vector<uint32_t> ipVec)
     return res;
 }
 
-/// Convert dotted IPv4 string to uint32_t in network byte order.
-/// Throws invalid_argument on parse error.
+/**
+ * @brief Parse dotted IPv4 string into uint32_t.
+ *
+ * @param ipStr Dotted IPv4 string (e.g., "10.10.10.12").
+ * @return IPv4 address in network byte order (in_addr.s_addr).
+ * @throws std::invalid_argument if the string is not a valid IPv4 address.
+ */
 inline uint32_t
 ipStringToUint32(const std::string& ipStr)
 {
@@ -98,6 +139,12 @@ ipStringToUint32(const std::string& ipStr)
     return addr.s_addr;
 }
 
+/**
+ * @brief Parse a vector of dotted IPv4 strings into uint32_t addresses.
+ *
+ * @return IPv4 addresses in network byte order.
+ * @throws std::invalid_argument if any entry is invalid.
+ */
 inline std::vector<uint32_t>
 ipStringVecToUint32Vec(std::vector<std::string> ipStringVec)
 {
@@ -113,27 +160,6 @@ ipStringVecToUint32Vec(std::vector<std::string> ipStringVec)
     }
     return res;
 }
-
-/// Parse a port string like "<dpid>/4" and extract the numeric part after the
-/// slash. Throws invalid_argument on format or parse errors.
-// inline uint32_t
-// portStringToUint(const std::string& portStr)
-// {
-//     try
-//     {
-//         return std::stoul(portStr, nullptr, 16);
-//     }
-//     catch (const std::invalid_argument& e)
-//     {
-//         std::cerr << "Invalid input: " << e.what() << std::endl;
-//         return 0; // Handle appropriately (e.g., return a default value)
-//     }
-//     catch (const std::out_of_range& e)
-//     {
-//         std::cerr << "Out of range: " << e.what() << std::endl;
-//         return 0; // Handle appropriately
-//     }
-// }
 
 inline uint32_t
 portStringToUint(const std::string& portStr)
@@ -154,8 +180,13 @@ portStringToUint(const std::string& portStr)
     }
 }
 
-/// Parse a hex string (e.g. "0x1a2b" or "1A2B") into uint64_t.
-/// Throws invalid_argument on parse errors.
+/**
+ * @brief Parse a hex string into uint64_t.
+ *
+ * Accepts strings like "0x1a2b" or "1A2B".
+ *
+ * @throws std::invalid_argument on parse failure.
+ */
 inline uint64_t
 hexStringToUint64(const std::string& hexStr)
 {
@@ -169,6 +200,16 @@ hexStringToUint64(const std::string& hexStr)
     return value;
 }
 
+/**
+ * @brief Execute a shell command and capture its stdout.
+ *
+ * @param cmd Shell command string passed to popen().
+ * @return Captured stdout output.
+ * @throws std::runtime_error if popen() fails.
+ *
+ * @warning This function executes via the shell. Do not pass untrusted input
+ *          into @p cmd unless properly escaped/sanitized.
+ */
 inline std::string
 execCommand(const std::string& cmd)
 {
@@ -191,6 +232,23 @@ execCommand(const std::string& cmd)
     return result;
 }
 
+/**
+ * @brief Perform an HTTPS POST request and return the response body.
+ *
+ * Uses Boost.URL for parsing and Boost.Beast for TLS + HTTP.
+ *
+ * @param url HTTPS URL (must start with "https://").
+ * @param payload Request body payload.
+ * @param ctype Content-Type header value (default: "application/json").
+ * @param authorization Authorization header value (default: empty).
+ * @return Response body as a string.
+ *
+ * @throws std::invalid_argument for invalid URLs (non-https, missing host, etc.).
+ * @throws std::runtime_error if the server returns >= 400 or on TLS/IO failures.
+ *
+ * @note This helper uses system default verify paths; certificate validation behavior
+ *       depends on platform configuration.
+ */
 inline std::string
 httpsPost(const std::string& url,
           const std::string& payload,
@@ -198,25 +256,30 @@ httpsPost(const std::string& url,
           const std::string& authorization = "")
 {
     namespace beast = boost::beast;
-    namespace http  = beast::http;
-    namespace asio  = boost::asio;
-    namespace urls  = boost::urls;
+    namespace http = beast::http;
+    namespace asio = boost::asio;
+    namespace urls = boost::urls;
 
     urls::url_view u{url};
     if (u.scheme() != "https")
+    {
         throw std::invalid_argument("Only https:// URLs are supported: " + url);
+    }
     if (u.host().empty())
+    {
         throw std::invalid_argument("URL missing host: " + url);
+    }
 
     const std::string host = static_cast<std::string>(u.host());
-    const std::string port = u.port().empty() ? "443"
-                                              : static_cast<std::string>(u.port());
+    const std::string port = u.port().empty() ? "443" : static_cast<std::string>(u.port());
 
     std::string target =
         u.encoded_path().empty() ? "/" : static_cast<std::string>(u.encoded_path());
 
     if (!u.encoded_query().empty())
+    {
         target += "?" + static_cast<std::string>(u.encoded_query());
+    }
 
     asio::io_context ioc;
     asio::ssl::context sslCtx{asio::ssl::context::tls_client};
@@ -229,11 +292,11 @@ httpsPost(const std::string& url,
     beast::get_lowest_layer(stream).connect(results);
 
     if (!SSL_set_tlsext_host_name(stream.native_handle(), host.c_str()))
+    {
         throw beast::system_error(
-            beast::error_code(
-                static_cast<int>(::ERR_get_error()),
-                asio::error::get_ssl_category()),
+            beast::error_code(static_cast<int>(::ERR_get_error()), asio::error::get_ssl_category()),
             "Failed to set SNI");
+    }
 
     stream.handshake(asio::ssl::stream_base::client);
 
@@ -260,13 +323,17 @@ httpsPost(const std::string& url,
         //                     "HTTP request failed: {} {}", res.result(), res.reason());
         // SPDLOG_LOGGER_DEBUG(Logger::instance(), "HTTP Response: {}", res.body());
         std::cerr << "HTTP Response: " << res << std::endl;
-        throw std::runtime_error("Server returned HTTP " +
-                                 std::to_string(res.result_int()));
+        throw std::runtime_error("Server returned HTTP " + std::to_string(res.result_int()));
     }
 
     return std::move(res.body());
 }
 
+/**
+ * @brief Current time in milliseconds since epoch (system_clock).
+ *
+ * Suitable for wall-clock timestamps and logging.
+ */
 inline int64_t
 getCurrentTimeMillisSystemClock()
 {
@@ -275,6 +342,11 @@ getCurrentTimeMillisSystemClock()
         .count();
 }
 
+/**
+ * @brief Monotonic time in milliseconds (steady_clock).
+ *
+ * Suitable for measuring durations; not tied to wall-clock time.
+ */
 inline int64_t
 getCurrentTimeMillisSteadyClock()
 {
@@ -283,6 +355,45 @@ getCurrentTimeMillisSteadyClock()
         .count();
 }
 
+/**
+ * @brief Monotonic time in milliseconds (steady_clock).
+ *
+ * Suitable for measuring durations; not tied to wall-clock time.
+ */
+inline std::string
+formatTime(int64_t timestamp_ms)
+{
+    time_t timestamp_s = timestamp_ms / 1000;
+    struct tm* localTime = localtime(&timestamp_s);
+    char buffer[80];
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localTime);
+    return std::string(buffer);
+}
+
+/**
+ * @brief Log the current local time at DEBUG level using the global Logger.
+ *
+ * @warning Uses localtime(), which is not thread-safe.
+ */
+inline void
+logCurrentTimeSystemClock()
+{
+    int64_t now_ms = utils::getCurrentTimeMillisSystemClock();
+    time_t now_s = now_ms / 1000;
+    struct tm* localTime = localtime(&now_s);
+
+    char buffer[80];
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localTime);
+    SPDLOG_LOGGER_DEBUG(Logger::instance(), "Local Time: {}", buffer);
+}
+
+/**
+ * @brief Convert MAC address string ("aa:bb:cc:dd:ee:ff") to a 48-bit integer.
+ *
+ * @param mac MAC string in colon-separated hex format.
+ * @return MAC as uint64_t (lower 48 bits used).
+ * @throws std::invalid_argument if parsing fails.
+ */
 inline uint64_t
 macToUint64(const std::string& mac)
 {
@@ -306,6 +417,12 @@ macToUint64(const std::string& mac)
     return result;
 }
 
+/**
+ * @brief Convert a 48-bit MAC stored in uint64_t to string form.
+ *
+ * @param mac MAC value (lower 48 bits used).
+ * @return MAC string ("aa:bb:cc:dd:ee:ff").
+ */
 inline std::string
 macToString(uint64_t mac)
 {
@@ -323,27 +440,5 @@ macToString(uint64_t mac)
     }
 
     return oss.str();
-}
-
-inline std::string
-formatTime(int64_t timestamp_ms)
-{
-    time_t timestamp_s = timestamp_ms / 1000;
-    struct tm* localTime = localtime(&timestamp_s);
-    char buffer[80];
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localTime);
-    return std::string(buffer);
-}
-
-inline void
-logCurrentTimeSystemClock()
-{
-    int64_t now_ms = utils::getCurrentTimeMillisSystemClock();
-    time_t now_s = now_ms / 1000;
-    struct tm* localTime = localtime(&now_s);
-
-    char buffer[80];
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localTime);
-    SPDLOG_LOGGER_DEBUG(Logger::instance(), "Local Time: {}", buffer);
 }
 } // namespace utils

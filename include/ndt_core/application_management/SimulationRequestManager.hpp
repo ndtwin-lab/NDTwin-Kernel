@@ -27,6 +27,25 @@
 
 class ApplicationManager;
 
+/**
+ * @brief Coordinates simulation execution requests and result forwarding.
+ *
+ * SimulationRequestManager acts as a bridge between applications and the
+ * simulator server. It sends simulation requests to the configured simulator
+ * endpoint and, when the network layer reports completion, forwards the result
+ * back to the originating application using the callback URL registered in
+ * ApplicationManager.
+ *
+ * Typical flow:
+ *  1) requestSimulation(body): send a run request to SIM_SERVER_URL for an app/case
+ *  2) onSimulationResult(appId, body): invoked by the network layer upon completion
+ *     - looks up the application's "simulation completed" callback via ApplicationManager
+ *     - forwards the result payload to that callback (implementation-dependent)
+ *
+ * Notes:
+ *  - This class does not own ApplicationManager; it stores a shared_ptr reference.
+ *  - Thread-safety depends on ApplicationManager and the caller's network layer threading model.
+ */
 class SimulationRequestManager
 {
   public:

@@ -19,7 +19,6 @@
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
  */
 
-// ndt_core/collection/FlowLinkUsageCollector.hpp
 #pragma once
 
 #include "common_types/SFlowType.hpp" // for Path, CounterInfo, FlowInfo
@@ -45,12 +44,30 @@ class TopologyAndFlowMonitor;             // lines 45-45
 namespace sflow
 {
 
-#define SAMPLING_RATE 1000
 #define SFLOW_PORT 6343
 #define BUFFER_SIZE 65535
-#define POLLING_INTERVAL 4      // seconds
 #define FLOW_IDLE_TIMEOUT 15000 // milliseconds
 
+/**
+ * @brief Collects sFlow samples and derives per-flow / per-link usage and paths.
+ *
+ * FlowLinkUsageCollector listens for sFlow datagrams (flow samples + counter samples),
+ * maintains an in-memory flow table (m_flowInfoTable) and per-interface counter snapshots
+ * (m_counterReports), and periodically computes average sending rates and other statistics.
+ *
+ * It also maintains a (src,dst) -> Path mapping and switch-count metadata, and can refresh
+ * these paths after routing changes (e.g., OpenFlow entry modifications).
+ *
+ * Concurrency:
+ *  - start()/stop() control background threads.
+ *  - m_flowInfoTable is protected by a shared mutex (readers/writers).
+ *  - counter report map and IF-index mapping are updated internally; callers should treat
+ *    returned data as snapshots.
+ *
+ * Deployment modes:
+ *  - Behavior may differ depending on m_mode (e.g., MININET vs TESTBED), such as how
+ *    sampling rate or counter conversion is handled.
+ */
 class FlowLinkUsageCollector
 {
   public:
@@ -61,33 +78,107 @@ class FlowLinkUsageCollector
                            int mode);
     ~FlowLinkUsageCollector();
 
+    /**
+     * @brief Start sFlow reception and background maintenance threads.
+     *
+     * Creates/opens the UDP socket (SFLOW_PORT) and launches worker threads:
+     *  - packet receive loop
+     *  - periodic average-rate calculation
+     *  - idle-flow purge loop
+     *  - optional debug/testing tasks (if enabled)
+     *
+     */
     void start();
+    /**
+     * @brief Stop all worker threads and close the sFlow socket.
+     *
+     * Signals threads to exit (m_running=false), joins them, and releases socket resources.
+     * Safe to call during shutdown.
+     */
     void stop();
 
     // TODO: Prevent to get the whole flow table
+    /**
+     * @brief Return a snapshot of the current flow table.
+     *
+     * The returned map is a copy of internal state, keyed by FlowKey with FlowInfo values.
+     * Intended for external consumers (e.g., REST handlers) to query current flow statistics.
+     *
+     * @note Copying the whole table can be expensive for large workloads.
+     *       Consider adding query filters or a "top-K" interface for production use.
+     */
     std::unordered_map<FlowKey, FlowInfo, FlowKeyHash> getFlowInfoTable();
 
     nlohmann::json getFlowInfoJson();
     nlohmann::json getTopKFlowInfoJson(int k);
 
+    /**
+     * @brief Replace the entire (src,dst)->Path map using a vector of paths.
+     *
+     * Typically called after the topology monitor or routing manager produces updated
+     * end-to-end paths.
+     *
+     * @param allPathsVector List of paths to be loaded into the internal map.
+     */
     void setAllPaths(std::vector<sflow::Path> allPathsVector);
     std::map<std::pair<uint32_t, uint32_t>, Path> getAllPaths();
+    /**
+     * @brief Update the path for one specific (srcIp,dstIp) pair.
+     *
+     * @param ipPair (srcIp, dstIp)
+     * @param path   Full path for that pair
+     */
     void setAllPath(std::pair<uint32_t, uint32_t> ipPair, Path path);
+    /**
+     * @brief Return all host IPs known to the collector / path map.
+     *
+     * Used by higher layers to enumerate endpoints for querying paths/stats.
+     */
     std::vector<uint32_t> getAllHostIps();
     void printAllPathMap();
+    /**
+     * @brief Refresh affected (src,dst)->Path entries after a routing change for a destination.
+     *
+     * Called after modifying OpenFlow entries or other routing rules that change the
+     * path to a specific destination. This method updates internal path records for
+     * the affected flows.
+     *
+     * @param affectedFlows List of (srcIp,dstIp) pairs that are impacted.
+     * @param dstIp         Destination IP whose routing was modified.
+     */
     void updateAllPathMapAfterModOpenflowEntry(
         std::vector<std::pair<uint32_t, uint32_t>> affectedFlows,
         uint32_t dstIp);
+    /**
+     * @brief Refresh of paths after multiple routing entries are modified.
+     *
+     * Each entry contains:
+     *  - a list of affected (srcIp,dstIp) flow pairs
+     *  - the destination IP associated with the modified entry
+     *
+     * @param affectedFlowsAndDstIpForEachModifiedEntry Batch update specification.
+     */
     void updateAllPathMapAfterModOpenflowEntries(
         std::vector<std::pair<std::vector<std::pair<uint32_t, uint32_t>>, uint32_t>>
             affectedFlowsAndDstIpForEachModifiedEntry);
 
+    /**
+     * @brief Get the number of switches on the path between a (src,dst) pair.
+     *
+     * @param ipPair (srcIp,dstIp)
+     * @return Optional switch count if the path is known; std::nullopt otherwise.
+     */
     std::optional<size_t> getSwitchCount(std::pair<uint32_t, uint32_t> ipPair);
+    /**
+     * @brief Return a snapshot of all computed switch counts for all (src,dst) pairs.
+     *
+     * @return Map from (srcIp,dstIp) to switch count.
+     */
     std::map<std::pair<uint32_t, uint32_t>, size_t> getAllSwitchCounts();
 
-    // LLM
+
     json getPathBetweenHostsJson(const std::string& srcHostName, const std::string& dstHostName);
-    // LLM
+
 
   private:
     inline std::string ourIpToString(uint32_t ipFront, uint32_t ipBack);

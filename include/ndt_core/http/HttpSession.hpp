@@ -19,7 +19,6 @@
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
  */
 
-// ndt_core/http/HttpSession.hpp
 #pragma once
 
 #include "utils/Utils.hpp" // For utils::DeploymentMode

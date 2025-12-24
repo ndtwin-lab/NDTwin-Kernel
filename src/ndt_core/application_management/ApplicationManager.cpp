@@ -157,7 +157,7 @@ ApplicationManager::chownRecursive(const fs::path& root,
                                    const std::string& user,
                                    const std::string& group)
 {
-    // 1. lookup user → uid
+    // 1. lookup user -> uid
     struct passwd* pw = getpwnam(user.c_str());
     if (!pw)
     {
@@ -166,7 +166,7 @@ ApplicationManager::chownRecursive(const fs::path& root,
     }
     uid_t uid = pw->pw_uid;
 
-    // 2. lookup group → gid
+    // 2. lookup group -> gid
     struct group* gr = getgrnam(group.c_str());
     if (!gr)
     {
