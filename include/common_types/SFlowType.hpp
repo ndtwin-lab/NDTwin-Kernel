@@ -262,7 +262,7 @@ struct CounterInfo
     int64_t lastReportTimestampInMilliseconds = 0;
     uint64_t lastReceivedInputOctets;
     uint64_t lastReceivedOutputOctets;
-    uint64_t inputByteCountOnALink = 0;
+    uint64_t inputByteCountOnALinkMultiplySampingRate = 0;
     uint64_t outputByteCountOnALink = 0;
 };
 

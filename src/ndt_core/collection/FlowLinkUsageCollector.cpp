@@ -766,8 +766,8 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
 
                 if (m_mode == utils::MININET)
                 {
-                    m_counterReports[make_pair(agentIp, relevantPort)].inputByteCountOnALink +=
-                        uint64_t(frameLength);
+                    m_counterReports[make_pair(agentIp, relevantPort)].inputByteCountOnALinkMultiplySampingRate +=
+                        uint64_t(frameLength) * samplingRate;
                 }
 
                 auto it = m_flowInfoTable.find(key);
@@ -1005,11 +1005,10 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                                     "Agent IP: {}, Input Port: {}, Bytes: {}",
                                     utils::ipToString(agentIp),
                                     inputPort,
-                                    counter.inputByteCountOnALink);
+                                    counter.inputByteCountOnALinkMultiplySampingRate);
 
                 // TODO[IMPLEMENT]: Gain sampling rate from flow sample
                 // Store to graph
-                uint32_t currentSamplingRate = 1;
                 auto agentKeyOtherSideOpt =
                     m_topologyAndFlowMonitor->getAgentKeyFromTheOtherSide(key);
                 if (!agentKeyOtherSideOpt.has_value())
@@ -1019,8 +1018,8 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                 }
                 m_topologyAndFlowMonitor->updateLinkInfoLeftLinkBandwidth(
                     agentKeyOtherSideOpt.value(),
-                    counter.inputByteCountOnALink * 8 * currentSamplingRate);
-                value.inputByteCountOnALink = 0;
+                    counter.inputByteCountOnALinkMultiplySampingRate * 8);
+                value.inputByteCountOnALinkMultiplySampingRate = 0;
             }
         }
     }
