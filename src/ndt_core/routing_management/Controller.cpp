@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 #include "ndt_core/routing_management/Controller.hpp"
 #include "ndt_core/routing_management/FlowRoutingManager.hpp"
@@ -44,7 +48,7 @@ Controller::Controller(std::shared_ptr<FlowRoutingManager> flowRoutingManager)
                                                           job.actions);
                       break;
                   case FlowOp::Delete:
-                      m_flowRoutingManager->deleteAnEntry(job.dpid, job.match);
+                      m_flowRoutingManager->deleteAnEntry(job.dpid, job.match, job.priority);
                       break;
                   }
               }

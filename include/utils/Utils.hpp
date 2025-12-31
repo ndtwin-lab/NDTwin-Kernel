@@ -13,13 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 
-// utils/Utils.hpp
 #pragma once
 
 #include "utils/Logger.hpp"
@@ -137,6 +140,118 @@ ipStringToUint32(const std::string& ipStr)
         throw std::invalid_argument("Invalid IP address: " + ipStr);
     }
     return addr.s_addr;
+}
+
+/**
+ * @brief Representation of an IPv4 address in CIDR form.
+ *
+ * All fields are stored in host byte order.
+ *
+ * - ip:      the IPv4 address part (A.B.C.D)
+ * - prefix:  prefix length in bits, range [0, 32]
+ * - mask:    subnet mask derived from prefix (e.g., /24 -> 255.255.255.0)
+ * - network: network address computed as (ip & mask)
+ *
+ * Example:
+ *   "20.0.0.1/24" -> ip=20.0.0.1, prefix=24, mask=255.255.255.0, network=20.0.0.0
+ */
+struct Ipv4Cidr
+{
+    uint32_t ip;      // host-order
+    uint8_t prefix;   // 0..32
+    uint32_t mask;    // host-order
+    uint32_t network; // ip & mask (host-order)
+};
+
+inline static uint32_t
+prefixToMaskHost(uint8_t p)
+{
+    if (p == 0)
+    {
+        return 0u;
+    }
+    if (p == 32)
+    {
+        return 0xFFFFFFFFu;
+    }
+    return (1u << p) - 1u; // low p bits set
+}
+
+inline static uint8_t
+maskToPrefixHost(uint32_t mask)
+{
+    // contiguous in host-order means: low bits are 1s, high bits are 0s
+    if (mask == 0u)
+    {
+        return 0;
+    }
+
+    uint8_t p = static_cast<uint8_t>(__builtin_popcount(mask));
+    uint32_t expected = (p == 32) ? 0xFFFFFFFFu : ((1u << p) - 1u);
+
+    if (mask != expected)
+    {
+        throw std::runtime_error("bad ipv4 netmask (non-contiguous)");
+    }
+
+    return p;
+}
+
+/**
+ * @brief Parse an IPv4 string that may optionally include a CIDR prefix.
+ *
+ * Accepts either:
+ *   - "A.B.C.D"        (treated as /32)
+ *   - "A.B.C.D/prefix" (prefix in [0, 32])
+ *
+ * Returned values are in host byte order. The function uses utils::ipStringToUint32()
+ * to parse the dotted IPv4 address portion.
+ *
+ * @param s IPv4 string, with optional "/prefix".
+ * @return Ipv4Cidr Parsed CIDR info (ip, prefix, mask, network).
+ *
+ * @throws std::invalid_argument if:
+ *   - the prefix is missing/invalid/out of range, or
+ *   - the IPv4 address portion is invalid (propagated from ipStringToUint32()).
+ *
+ * Example:
+ *   parseIpv4Cidr("10.0.0.1/24") => network=10.0.0.0, mask=255.255.255.0
+ *   parseIpv4Cidr("10.0.0.1")    => prefix=32, mask=255.255.255.255
+ */
+inline Ipv4Cidr
+parseIpv4Cidr(const std::string& s)
+{
+    auto slash = s.find('/');
+    std::string ipPart = (slash == std::string::npos) ? s : s.substr(0, slash);
+    std::string suf = (slash == std::string::npos) ? "" : s.substr(slash + 1);
+
+    uint32_t ip = utils::ipStringToUint32(ipPart); // host-order
+
+    uint8_t prefix = 32;
+    uint32_t mask = 0xFFFFFFFFu;
+
+    if (!suf.empty())
+    {
+        if (suf.find('.') != std::string::npos)
+        {
+            mask = utils::ipStringToUint32(suf); // host-order mask (e.g. 0x00FFFFFF)
+            prefix = maskToPrefixHost(mask);
+        }
+        else
+        {
+            int p = std::stoi(suf);
+            if (p < 0 || p > 32)
+            {
+                throw std::runtime_error("bad ipv4 prefix");
+            }
+            prefix = static_cast<uint8_t>(p);
+            mask = prefixToMaskHost(prefix);
+        }
+    }
+
+    uint32_t network = ip & mask;
+
+    return Ipv4Cidr{.ip = ip, .prefix = prefix, .mask = mask, .network = network};
 }
 
 /**

@@ -13,28 +13,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 #include "ndt_core/routing_management/FlowRoutingManager.hpp"
-#include "event_system/EventBus.hpp"                          // for Event
-#include "event_system/EventPayloads.hpp"                     // for FlowAd...
-#include "event_system/PayloadTypes.hpp"                      // for FlowAd...
-#include "ndt_core/collection/FlowLinkUsageCollector.hpp"     // for FlowLi...
-#include "ndt_core/collection/TopologyAndFlowMonitor.hpp"     // for Topolo...
-#include "nlohmann/json.hpp"                                  // for basic_...
-#include "spdlog/spdlog.h"                                    // for SPDLOG...
-#include "utils/Logger.hpp"                                   // for Logger
-#include "utils/Utils.hpp"                                    // for ipToSt...
-#include <any>                                                // for any_cast
-#include <functional>                                         // for function
-#include <sstream>                                            // for basic_...
-#include <stddef.h>                                           // for size_t
-#include <unordered_map>                                      // for unorde...
-#include <utility>                                            // for pair
-#include <vector>                                             // for vector
+#include "event_system/EventBus.hpp"                      // for Event
+#include "event_system/EventPayloads.hpp"                 // for FlowAd...
+#include "event_system/PayloadTypes.hpp"                  // for FlowAd...
+#include "ndt_core/collection/FlowLinkUsageCollector.hpp" // for FlowLi...
+#include "ndt_core/collection/TopologyAndFlowMonitor.hpp" // for Topolo...
+#include "nlohmann/json.hpp"                              // for basic_...
+#include "spdlog/spdlog.h"                                // for SPDLOG...
+#include "utils/Logger.hpp"                               // for Logger
+#include "utils/Utils.hpp"                                // for ipToSt...
+#include <any>                                            // for any_cast
+#include <functional>                                     // for function
+#include <sstream>                                        // for basic_...
+#include <stddef.h>                                       // for size_t
+#include <unordered_map>                                  // for unorde...
+#include <utility>                                        // for pair
+#include <vector>                                         // for vector
 
 using json = nlohmann::json;
 
@@ -54,15 +58,25 @@ FlowRoutingManager::~FlowRoutingManager()
 }
 
 void
-FlowRoutingManager::deleteAnEntry(uint64_t dpid, json match)
+FlowRoutingManager::deleteAnEntry(uint64_t dpid, json match, int priority)
 {
     json jsonData;
     jsonData["dpid"] = dpid;
     jsonData["match"] = match;
 
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/flowentry/delete "
-        << "-H \"Content-Type: application/json\" " << "-d '" << jsonData.dump() << "'";
+
+    if (priority == -1)
+    {
+        cmd << "curl -s -X POST http://127.0.0.1:8080/stats/flowentry/delete "
+            << "-H \"Content-Type: application/json\" " << "-d '" << jsonData.dump() << "'";
+    }
+    else
+    {
+        jsonData["priority"] = priority;
+        cmd << "curl -s -X POST http://127.0.0.1:8080/stats/flowentry/delete_strict "
+            << "-H \"Content-Type: application/json\" " << "-d '" << jsonData.dump() << "'";
+    }
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
     utils::execCommand(cmd.str());

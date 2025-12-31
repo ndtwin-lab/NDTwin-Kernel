@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 
 #pragma once
@@ -268,7 +272,9 @@ struct CounterInfo
 
 struct FlowChange
 {
-    uint32_t dstIp;
+    uint32_t dstNet;          // network address (ip & mask)
+    uint32_t dstMask;         // e.g., 0xFFFFFF00
+    uint32_t priority;        // OpenFlow priority
     uint32_t oldOutInterface; // 0 if added
     uint32_t newOutInterface; // 0 if removed
 };
@@ -301,58 +307,83 @@ from_json(const nlohmann::json& j, FlowKey& fk)
     fk.protocol = j.at("protocol_number").get<uint8_t>();
 }
 
+using Key = std::tuple<uint32_t, uint32_t, uint32_t>; // net, mask, pri
+
+struct KeyHash
+{
+    size_t operator()(const Key& k) const noexcept
+    {
+        auto h1 = std::hash<uint32_t>{}(std::get<0>(k));
+        auto h2 = std::hash<uint32_t>{}(std::get<1>(k));
+        auto h3 = std::hash<uint32_t>{}(std::get<2>(k));
+        // simple hash-combine
+        size_t h = h1;
+        h ^= h2 + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= h3 + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    }
+};
+
 inline std::vector<FlowDiff>
 getFlowTableDiff(
-    const std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>>&
+    const std::unordered_map<uint64_t,
+                             std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>&
         oldTable,
-    const std::unordered_map<uint64_t, std::vector<std::pair<uint32_t, uint32_t>>>& newTable)
-
+    const std::unordered_map<uint64_t,
+                             std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>&
+        newTable)
 {
     std::vector<FlowDiff> diffs;
 
-    for (const auto& [dpid, newFlows] : newTable)
-    {
-        const auto& oldFlowsIter = oldTable.find(dpid);
-        std::unordered_map<uint32_t, uint32_t> oldMap;
-        if (oldFlowsIter != oldTable.end())
+    auto buildMap = [](const auto& rules) {
+        std::unordered_map<Key, uint32_t, KeyHash> m; // Key -> outPort
+        for (const auto& r : rules)
         {
-            for (const auto& [dstIp, outPort, priority] : oldFlowsIter->second)
-            {
-                oldMap[dstIp] = outPort;
-            }
+            uint32_t net = std::get<0>(r);
+            uint32_t mask = std::get<1>(r);
+            uint32_t out = std::get<2>(r);
+            uint32_t pri = std::get<3>(r);
+            m[{net, mask, pri}] = out; // last wins if duplicates
         }
+        return m;
+    };
 
-        std::unordered_map<uint32_t, uint32_t> newMap;
-        for (const auto& [dstIp, outPort] : newFlows)
+    // dpids present in newTable
+    for (const auto& [dpid, newRules] : newTable)
+    {
+        auto oldIt = oldTable.find(dpid);
+
+        auto newMap = buildMap(newRules);
+        std::unordered_map<Key, uint32_t, KeyHash> oldMap;
+        if (oldIt != oldTable.end())
         {
-            newMap[dstIp] = outPort;
+            oldMap = buildMap(oldIt->second);
         }
 
         FlowDiff diff;
         diff.dpid = dpid;
 
-        // Detect added and modified
-        for (const auto& [dstIp, newOutPort] : newMap)
+        // added / modified
+        for (const auto& [k, newOut] : newMap)
         {
-            auto oldIt = oldMap.find(dstIp);
-            if (oldIt == oldMap.end())
+            auto itOld = oldMap.find(k);
+            if (itOld == oldMap.end())
             {
-                // Added
-                diff.added.push_back({dstIp, 0, newOutPort});
+                diff.added.push_back({std::get<0>(k), std::get<1>(k), std::get<2>(k), 0, newOut});
             }
-            else if (oldIt->second != newOutPort)
+            else if (itOld->second != newOut)
             {
-                // Modified
-                diff.modified.push_back({dstIp, oldIt->second, newOutPort});
+                diff.modified.push_back(
+                    {std::get<0>(k), std::get<1>(k), std::get<2>(k), itOld->second, newOut});
             }
         }
 
-        // Detect removed
-        for (const auto& [dstIp, oldOutPort] : oldMap)
+        // removed
+        for (const auto& [k, oldOut] : oldMap)
         {
-            if (newMap.find(dstIp) == newMap.end())
+            if (newMap.find(k) == newMap.end())
             {
-                diff.removed.push_back({dstIp, oldOutPort, 0});
+                diff.removed.push_back({std::get<0>(k), std::get<1>(k), std::get<2>(k), oldOut, 0});
             }
         }
 
@@ -362,8 +393,8 @@ getFlowTableDiff(
         }
     }
 
-    // Check switches in oldTable but not in newTable
-    for (const auto& [dpid, oldFlows] : oldTable)
+    // dpids present only in oldTable
+    for (const auto& [dpid, oldRules] : oldTable)
     {
         if (newTable.find(dpid) != newTable.end())
         {
@@ -373,9 +404,10 @@ getFlowTableDiff(
         FlowDiff diff;
         diff.dpid = dpid;
 
-        for (const auto& [dstIp, oldOutPort, priority] : oldFlows)
+        auto oldMap = buildMap(oldRules);
+        for (const auto& [k, oldOut] : oldMap)
         {
-            diff.removed.push_back({dstIp, oldOutPort, 0});
+            diff.removed.push_back({std::get<0>(k), std::get<1>(k), std::get<2>(k), oldOut, 0});
         }
 
         if (!diff.removed.empty())

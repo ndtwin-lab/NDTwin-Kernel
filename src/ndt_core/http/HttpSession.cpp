@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 #include "ndt_core/http/HttpSession.hpp"
 #include "event_system/EventBus.hpp"
@@ -653,7 +657,8 @@ HttpSession::handleDisableSwitch(http::response<http::string_body>& res)
         m_flowLinkUsageCollector->getAllPaths();
     std::vector<uint32_t> hostIpList = m_flowLinkUsageCollector->getAllHostIps();
     std::map<std::pair<uint32_t, uint32_t>, sflow::Path> newAllPaths;
-    std::unordered_map<uint64_t, std::vector<std::pair<uint32_t, uint32_t>>> newOpenflowTables;
+    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
+        newOpenflowTables;
 
     for (const auto& dstIp : hostIpList)
     {
@@ -689,27 +694,39 @@ HttpSession::handleDisableSwitch(http::response<http::string_body>& res)
     }
 
     auto diffs = sflow::getFlowTableDiff(oldOpenflowTables, newOpenflowTables);
+
+    auto fmtMatch = [](uint32_t net, uint32_t mask) {
+        return utils::ipToString(net) + "/" + utils::ipToString(mask);
+    };
+
     json responseJson = json::array();
     for (const auto& diff : diffs)
     {
         json j;
         j["dpid"] = diff.dpid;
+
         for (const auto& change : diff.added)
         {
-            j["added"].push_back(
-                {{"dst_ip", change.dstIp}, {"new_output_interface", change.newOutInterface}});
+            j["added"].push_back({{"nw_dst", fmtMatch(change.dstNet, change.dstMask)},
+                                  {"priority", change.priority},
+                                  {"new_output_interface", change.newOutInterface}});
         }
+
         for (const auto& change : diff.removed)
         {
-            j["removed"].push_back(
-                {{"dst_ip", change.dstIp}, {"old_output_interface", change.oldOutInterface}});
+            j["removed"].push_back({{"nw_dst", fmtMatch(change.dstNet, change.dstMask)},
+                                    {"priority", change.priority},
+                                    {"old_output_interface", change.oldOutInterface}});
         }
+
         for (const auto& change : diff.modified)
         {
-            j["modified"].push_back({{"dst_ip", change.dstIp},
+            j["modified"].push_back({{"nw_dst", fmtMatch(change.dstNet, change.dstMask)},
+                                     {"priority", change.priority},
                                      {"old_output_interface", change.oldOutInterface},
                                      {"new_output_interface", change.newOutInterface}});
         }
+
         responseJson.push_back(j);
     }
     res.body() = responseJson.dump();
@@ -935,8 +952,13 @@ makeInstallJob(const nlohmann::json& entry)
     j.priority = entry.value("priority", 0);
     j.match = entry.value("match", nlohmann::json::object());
     j.actions = entry.value("actions", nlohmann::json::array());
-    j.dstIpU32 = utils::ipStringToUint32(j.match.at("ipv4_dst").get<std::string>());
     j.idleTimeout = entry.value("idle_timeout", 0);
+
+    auto cidr = utils::parseIpv4Cidr(j.match.at("ipv4_dst").get<std::string>());
+    j.dstIpU32 = cidr.ip;
+    j.dstMaskU32 = cidr.mask;
+    j.dstPrefixLen = cidr.prefix;
+
     return j;
 }
 
@@ -949,7 +971,12 @@ makeModifyJob(const nlohmann::json& entry)
     j.priority = entry.value("priority", 0);
     j.match = entry.value("match", nlohmann::json::object());
     j.actions = entry.value("actions", nlohmann::json::array());
-    j.dstIpU32 = utils::ipStringToUint32(j.match.at("ipv4_dst").get<std::string>());
+
+    auto cidr = utils::parseIpv4Cidr(j.match.at("ipv4_dst").get<std::string>());
+    j.dstIpU32 = cidr.ip;
+    j.dstMaskU32 = cidr.mask;
+    j.dstPrefixLen = cidr.prefix;
+
     return j;
 }
 
@@ -959,8 +986,14 @@ makeDeleteJob(const nlohmann::json& entry)
     FlowJob j;
     j.dpid = entry.at("dpid").get<uint64_t>();
     j.op = FlowOp::Delete;
+    j.priority = entry.value("priority", -1);
     j.match = entry.value("match", nlohmann::json::object());
-    j.dstIpU32 = utils::ipStringToUint32(j.match.at("ipv4_dst").get<std::string>());
+
+    auto cidr = utils::parseIpv4Cidr(j.match.at("ipv4_dst").get<std::string>());
+    j.dstIpU32 = cidr.ip;
+    j.dstMaskU32 = cidr.mask;
+    j.dstPrefixLen = cidr.prefix;
+
     return j;
 }
 
@@ -969,6 +1002,8 @@ HttpSession::processFlowBatch(const json& j, http::response<http::string_body>& 
 {
     std::vector<std::pair<std::vector<std::pair<uint32_t, uint32_t>>, uint32_t>>
         affectedFlowsAndDstIpForEachModifiedEntry;
+
+    SPDLOG_LOGGER_INFO(Logger::instance(), "j {}", j.dump(2));
 
     const auto& ins = j.value("install_flow_entries", json::array());
     const auto& mods = j.value("modify_flow_entries", json::array());
@@ -1016,25 +1051,58 @@ HttpSession::processFlowBatch(const json& j, http::response<http::string_body>& 
     // Enqueue once; dispatcher drains per-DPID on worker threads
     m_controller->dispatcher().enqueue(std::move(jobs));
 
+    // TODO: Immediately update the table
     m_deviceConfigurationAndPowerManager->updateOpenFlowTables(j);
 
-    // Small helper to avoid repeating the same affected-flows code
     auto addAffected = [&](const json& entry, const char* tag) -> bool {
         try
         {
             json match = entry.value("match", json::object());
-            uint32_t dstIp = utils::ipStringToUint32(match["ipv4_dst"].get<std::string>());
+
+            if (!match.contains("ipv4_dst"))
+            {
+                throw std::invalid_argument("match.ipv4_dst missing");
+            }
+
+            const std::string dstStr = match.at("ipv4_dst").get<std::string>();
+            auto cidr = utils::parseIpv4Cidr(dstStr); // ip/mask/network in host-order
+
+            const uint32_t net = cidr.network;
+            const uint32_t mask = cidr.mask;
 
             std::vector<uint32_t> hostIpList = m_flowLinkUsageCollector->getAllHostIps();
-            std::vector<std::pair<uint32_t, uint32_t>> affectedFlows;
-            for (const auto& host : hostIpList)
+
+            // Find all destination hosts that match ipv4_dst (host or subnet)
+            std::vector<uint32_t> dstHosts;
+            dstHosts.reserve(hostIpList.size());
+            for (uint32_t h : hostIpList)
             {
-                if (host != dstIp) // All-pair
+                if ((h & mask) == net)
                 {
-                    affectedFlows.emplace_back(host, dstIp);
+                    dstHosts.push_back(h);
                 }
             }
-            affectedFlowsAndDstIpForEachModifiedEntry.emplace_back(std::move(affectedFlows), dstIp);
+
+            // Build affected (src, dst) pairs (skip src==dst)
+            std::vector<std::pair<uint32_t, uint32_t>> affectedFlows;
+            affectedFlows.reserve(hostIpList.size() * dstHosts.size());
+
+            for (uint32_t src : hostIpList)
+            {
+                for (uint32_t dst : dstHosts)
+                {
+                    if (src != dst)
+                    {
+                        affectedFlows.emplace_back(src, dst);
+                    }
+                }
+            }
+
+            // For subnet, "a single dst" doesn't exist, so store network as a key.
+            uint32_t dstKey = (cidr.prefix == 32) ? cidr.ip : cidr.network;
+
+            affectedFlowsAndDstIpForEachModifiedEntry.emplace_back(std::move(affectedFlows),
+                                                                   dstKey);
             return true;
         }
         catch (const std::exception& e)

@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 #include "ndt_core/collection/FlowLinkUsageCollector.hpp"
 #include "common_types/GraphTypes.hpp"
@@ -766,7 +770,8 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
 
                 if (m_mode == utils::MININET)
                 {
-                    m_counterReports[make_pair(agentIp, relevantPort)].inputByteCountOnALinkMultiplySampingRate +=
+                    m_counterReports[make_pair(agentIp, relevantPort)]
+                        .inputByteCountOnALinkMultiplySampingRate +=
                         uint64_t(frameLength) * samplingRate;
                 }
 
@@ -1429,152 +1434,24 @@ FlowLinkUsageCollector::printAllPathMap()
     }
 }
 
-void
-FlowLinkUsageCollector::updateAllPathMapAfterModOpenflowEntry(
-    std::vector<std::pair<uint32_t, uint32_t>> affectedFlows,
-    uint32_t dstIp)
+using Rule = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>;
+// (net, mask, outPort, priority)
+
+static inline uint32_t
+popcount32(uint32_t x)
 {
-    SPDLOG_LOGGER_DEBUG(Logger::instance(), "updateAllPathMapAfterModOpenflowEntry");
-    // Sleep for a while to get updated openflow table
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    if (m_deviceConfigurationAndPowerManager == nullptr)
+#if defined(__GNUG__) || defined(__clang__)
+    return static_cast<uint32_t>(__builtin_popcount(x));
+#else
+    // portable fallback
+    uint32_t c = 0;
+    while (x)
     {
-        SPDLOG_LOGGER_WARN(Logger::instance(), "null pointer");
+        x &= (x - 1);
+        ++c;
     }
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>>
-        openflowTables = m_deviceConfigurationAndPowerManager->getOpenFlowTable();
-
-    // Make sure table is not empty, otherwise, refetch
-    for (const auto& [dpid, swTable] : openflowTables)
-    {
-        if (swTable.empty())
-        {
-            SPDLOG_LOGGER_WARN(Logger::instance(), "Switch {} has empty table.", dpid);
-
-            int counter = 0;
-            while (true)
-            {
-                SPDLOG_LOGGER_WARN(Logger::instance(), "Refetch flow table on {}", dpid);
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                openflowTables[dpid] =
-                    m_deviceConfigurationAndPowerManager->getOpenFlowTable(dpid)[0];
-                if (!openflowTables[dpid].empty())
-                {
-                    break;
-                }
-
-                counter++;
-
-                if (counter >= 20)
-                {
-                    SPDLOG_LOGGER_WARN(Logger::instance(),
-                                       "Exceeded 20 refetch attempts; "
-                                       "updateAllPathMapAfterModOpenflowEntry failed.");
-                    return;
-                }
-            }
-        }
-    }
-
-    auto graph = m_topologyAndFlowMonitor->getGraph();
-
-    for (const auto& flow : affectedFlows)
-    {
-        auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByHostIp(flow.first);
-        auto srcSwitch = boost::target(*edgeOpt, graph);
-        int hopCount = 0;
-        sflow::Path newPath;
-
-        if (edgeOpt.has_value())
-        {
-            newPath.emplace_back(flow.first, graph[*edgeOpt].dstInterface);
-
-            SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                "graph[srcSwitch].dpid {}",
-                                graph[srcSwitch].dpid);
-            while (graph[srcSwitch].dpid != 0)
-            {
-                uint64_t dpid = graph[srcSwitch].dpid;
-                uint32_t outPort = 0;
-                uint32_t highestPriority = 0;
-
-                SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                    "openflowTables[dpid].size() {}",
-                                    openflowTables[dpid].size());
-
-                for (const auto& [ip, out, prio] : openflowTables[dpid])
-                {
-                    SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                        "dst ip {} output port {} prio {}",
-                                        ip,
-                                        out,
-                                        prio);
-                    if (ip == flow.second && prio > highestPriority)
-                    {
-                        outPort = out;
-                        highestPriority = prio;
-                        SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                            "highestPriority {}",
-                                            highestPriority);
-                    }
-                }
-
-                newPath.emplace_back(dpid, outPort);
-
-                auto edgeOpt2 = m_topologyAndFlowMonitor->findEdgeByDpidAndPort({dpid, outPort});
-                if (edgeOpt2)
-                {
-                    srcSwitch = boost::target(*edgeOpt2, graph);
-                }
-                else
-                {
-                    SPDLOG_LOGGER_WARN(Logger::instance(),
-                                       "edgeOpt not fund dpid {} outPort {}",
-                                       dpid,
-                                       outPort);
-                    break;
-                }
-
-                if (hopCount++ > 100)
-                {
-                    SPDLOG_LOGGER_WARN(Logger::instance(), "Exceed max hop count");
-                    break; // Max hop count 100
-                }
-            }
-            // Check whether dstIp is reachable or not
-            uint64_t dstSwitchDpid = newPath.back().first;
-            uint32_t dstSwitchOutPort = newPath.back().second;
-            auto edgeOpt =
-                m_topologyAndFlowMonitor->findEdgeByDpidAndPort({dstSwitchDpid, dstSwitchOutPort});
-
-            if (edgeOpt.has_value())
-            {
-                auto connectedVertex = boost::target(*edgeOpt, graph);
-                auto ipVector = graph[connectedVertex].ip;
-                if (std::find(ipVector.begin(), ipVector.end(), dstIp) != ipVector.end())
-                {
-                    newPath.emplace_back(dstIp, 0);
-                }
-                else
-                {
-                    newPath = {};
-                }
-            }
-            else
-            {
-                newPath = {};
-                SPDLOG_LOGGER_DEBUG(Logger::instance(), "path not fund");
-            }
-        }
-        else
-        {
-            SPDLOG_LOGGER_WARN(Logger::instance(), "edgeOpt not fund");
-        }
-
-        // Update m_allPathMap
-        setAllPath(flow, newPath);
-    }
-    return;
+    return c;
+#endif
 }
 
 void
@@ -1588,7 +1465,8 @@ FlowLinkUsageCollector::updateAllPathMapAfterModOpenflowEntries(
     {
         SPDLOG_LOGGER_WARN(Logger::instance(), "null pointer");
     }
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>>
+
+    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
         openflowTables = m_deviceConfigurationAndPowerManager->getOpenFlowTable();
 
     // Make sure table is not empty, otherwise, refetch
@@ -1602,10 +1480,12 @@ FlowLinkUsageCollector::updateAllPathMapAfterModOpenflowEntries(
             {
                 SPDLOG_LOGGER_WARN(Logger::instance(), "Refetch flow table on {}", dpid);
                 std::this_thread::sleep_for(std::chrono::seconds(1));
-                openflowTables[dpid] =
-                    m_deviceConfigurationAndPowerManager->getOpenFlowTable(dpid)[0];
-                if (!openflowTables[dpid].empty())
+
+                auto one = m_deviceConfigurationAndPowerManager->getOpenFlowTable(dpid);
+                auto itOne = one.find(dpid);
+                if (itOne != one.end() && !itOne->second.empty())
                 {
+                    openflowTables[dpid] = itOne->second;
                     break;
                 }
             }
@@ -1614,148 +1494,147 @@ FlowLinkUsageCollector::updateAllPathMapAfterModOpenflowEntries(
 
     auto graph = m_topologyAndFlowMonitor->getGraph();
 
-    for (const auto& [affectedFlows, dstIp] : affectedFlowsAndDstIpForEachModifiedEntry)
-    {
-        // Check whether dstIp is in graph or not
-        auto v = m_topologyAndFlowMonitor->findVertexByIp(dstIp);
-        auto g = m_topologyAndFlowMonitor->getGraph();
-        if (!v)
-        {
-            SPDLOG_LOGGER_INFO(Logger::instance(),
-                               "dstIp {} NOT found in graph",
-                               utils::ipToString(dstIp));
-            continue;
-        }
-        else
-        {
-            SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                "dstIp {} found at vertex {}",
-                                utils::ipToString(dstIp),
-                                g[*v].nickName);
+    auto pickOutPort = [&](uint64_t dpid, uint32_t dstIp) -> uint32_t {
+        uint32_t bestOut = 0;
+        uint32_t bestPrio = 0;
+        uint32_t bestMaskBits = 0;
+        bool found = false;
 
-            if (g[*v].vertexType != VertexType::HOST)
+        auto it = openflowTables.find(dpid);
+        if (it == openflowTables.end())
+        {
+            return 0;
+        }
+
+        for (const Rule& r : it->second)
+        {
+            const uint32_t net = std::get<0>(r);
+            const uint32_t mask = std::get<1>(r);
+            const uint32_t out = std::get<2>(r);
+            const uint32_t prio = std::get<3>(r);
+
+            // match: (dstIp & mask) == net
+            if ((dstIp & mask) == net)
+            {
+                // OpenFlow uses priority; for ties, prefer more specific mask (optional)
+                const uint32_t maskBits = popcount32(mask);
+
+                if (!found || prio > bestPrio || (prio == bestPrio && maskBits > bestMaskBits))
+                {
+                    found = true;
+                    bestPrio = prio;
+                    bestMaskBits = maskBits;
+                    bestOut = out;
+                }
+            }
+        }
+        return bestOut;
+    };
+
+    for (const auto& [affectedFlows, _unusedKey] : affectedFlowsAndDstIpForEachModifiedEntry)
+    {
+        for (const auto& flow : affectedFlows)
+        {
+            const uint32_t srcHostIp = flow.first;
+            const uint32_t dstHostIp = flow.second;
+
+            // Validate dst host exists in graph
+            auto vdst = m_topologyAndFlowMonitor->findVertexByIp(dstHostIp);
+            if (!vdst)
+            {
+                SPDLOG_LOGGER_INFO(Logger::instance(),
+                                   "dst {} not found in graph",
+                                   utils::ipToString(dstHostIp));
+                continue;
+            }
+
+            if (graph[*vdst].vertexType != VertexType::HOST)
             {
                 continue;
             }
-        }
 
-        SPDLOG_LOGGER_INFO(Logger::instance(), "dstIp {}", dstIp);
-        for (const auto& flow : affectedFlows)
-        {
-            SPDLOG_LOGGER_TRACE(Logger::instance(), "affected flow {} {}", flow.first, flow.second);
+            auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByHostIp(srcHostIp);
+            if (!edgeOpt.has_value())
+            {
+                SPDLOG_LOGGER_WARN(Logger::instance(), "src host edge not found {}", srcHostIp);
+                setAllPath(flow, {});
+                continue;
+            }
 
-            auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByHostIp(flow.first);
             auto srcSwitch = boost::target(*edgeOpt, graph);
             int hopCount = 0;
             sflow::Path path;
 
-            if (edgeOpt.has_value())
+            // host -> first switch
+            path.emplace_back(srcHostIp, graph[*edgeOpt].dstInterface);
+
+            while (graph[srcSwitch].dpid != 0)
             {
-                path.emplace_back(flow.first, graph[*edgeOpt].dstInterface);
+                uint64_t dpid = graph[srcSwitch].dpid;
 
-                SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                    "graph[srcSwitch].dpid {}",
-                                    graph[srcSwitch].dpid);
-                while (graph[srcSwitch].dpid != 0)
+                uint32_t outPort = pickOutPort(dpid, dstHostIp);
+                if (outPort == 0)
                 {
-                    uint64_t dpid = graph[srcSwitch].dpid;
-                    uint32_t outPort = 0;
-                    uint32_t highestPriority = 0;
-
-                    SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                        "openflowTables[dpid].size() {}",
-                                        openflowTables[dpid].size());
-
-                    for (const auto& [ip, out, prio] : openflowTables[dpid])
-                    {
-                        SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                            "dst ip {} output port {} prio {}",
-                                            ip,
-                                            out,
-                                            prio);
-                        if (ip == flow.second && prio > highestPriority)
-                        {
-                            outPort = out;
-                            highestPriority = prio;
-                            SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                                "highestPriority {}",
-                                                highestPriority);
-                        }
-                    }
-
-                    SPDLOG_LOGGER_TRACE(Logger::instance(), "dpid {} outPort {}", dpid, outPort);
-
-                    path.emplace_back(dpid, outPort);
-
-                    auto edgeOpt2 =
-                        m_topologyAndFlowMonitor->findEdgeByDpidAndPort({dpid, outPort});
-                    if (edgeOpt2)
-                    {
-                        srcSwitch = boost::target(*edgeOpt2, graph);
-                    }
-                    else
-                    {
-                        // SPDLOG_LOGGER_WARN(Logger::instance(),
-                        //                    "edgeOpt not fund dpid {} outPort {}",
-                        //                    dpid,
-                        //                    outPort);
-                        break;
-                    }
-
-                    if (hopCount++ > 100)
-                    {
-                        SPDLOG_LOGGER_WARN(Logger::instance(), "Exceed max hop count");
-                        break; // Max hop count 100
-                    }
+                    // No matching rule found
+                    SPDLOG_LOGGER_WARN(Logger::instance(),
+                                       "No rule match at dpid {} for dst {}",
+                                       dpid,
+                                       utils::ipToString(dstHostIp));
+                    path = {};
+                    break;
                 }
-                // Check whether dstIp is reachable or not
+
+                path.emplace_back(dpid, outPort);
+
+                auto edgeOpt2 = m_topologyAndFlowMonitor->findEdgeByDpidAndPort({dpid, outPort});
+                if (!edgeOpt2)
+                {
+                    path = {};
+                    break;
+                }
+                srcSwitch = boost::target(*edgeOpt2, graph);
+
+                if (hopCount++ > 100)
+                {
+                    SPDLOG_LOGGER_WARN(Logger::instance(), "Exceed max hop count");
+                    path = {};
+                    break;
+                }
+            }
+
+            // Reachability check must also use dstHostIp (NOT the old outer dstIp)
+            if (!path.empty())
+            {
                 uint64_t dstSwitchDpid = path.back().first;
                 uint32_t dstSwitchOutPort = path.back().second;
-                auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByDpidAndPort(
+
+                auto lastEdge = m_topologyAndFlowMonitor->findEdgeByDpidAndPort(
                     {dstSwitchDpid, dstSwitchOutPort});
 
-                if (edgeOpt.has_value())
+                if (lastEdge.has_value())
                 {
-                    auto connectedVertex = boost::target(*edgeOpt, graph);
+                    auto connectedVertex = boost::target(*lastEdge, graph);
                     auto ipVector = graph[connectedVertex].ip;
-                    if (std::find(ipVector.begin(), ipVector.end(), dstIp) != ipVector.end())
+
+                    if (std::find(ipVector.begin(), ipVector.end(), dstHostIp) != ipVector.end())
                     {
-                        path.emplace_back(dstIp, 0);
+                        path.emplace_back(dstHostIp, 0);
                     }
                     else
                     {
-                        SPDLOG_LOGGER_WARN(Logger::instance(),
-                                           "edgeOpt not found {} {} {}, set path to empty dit",
-                                           dstSwitchDpid,
-                                           dstSwitchOutPort,
-                                           dstIp);
                         path = {};
                     }
                 }
                 else
                 {
-                    SPDLOG_LOGGER_WARN(Logger::instance(),
-                                       "path not fund {} {}, set path to empty dict",
-                                       dstSwitchDpid,
-                                       dstSwitchOutPort);
-
-                    for (const auto& n : path)
-                    {
-                        SPDLOG_LOGGER_TRACE(Logger::instance(), "node {} {}", n.first, n.second);
-                    }
-
                     path = {};
                 }
             }
-            else
-            {
-                SPDLOG_LOGGER_WARN(Logger::instance(), "edgeOpt not fund");
-            }
 
-            // Update m_allPathMap
             setAllPath(flow, path);
         }
     }
+
     // printAllPathMap();
     return;
 }

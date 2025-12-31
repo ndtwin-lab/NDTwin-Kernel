@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 
 #pragma once
@@ -74,12 +78,23 @@ class FlowRoutingManager
     ~FlowRoutingManager();
 
     /**
-     * @brief Delete a flow entry from a switch.
+     * @brief Delete an OpenFlow flow entry on a given switch.
      *
-     * @param dpid Target switch datapath ID.
-     * @param match JSON match fields identifying the entry to delete.
+     * If @p priority is -1 (default), this issues a non-strict delete request
+     * (POST /stats/flowentry/delete) and may remove multiple entries that match
+     * the provided @p match fields.
+     *
+     * If @p priority is provided (>= 0), this issues a strict delete request
+     * (POST /stats/flowentry/delete_strict) where both @p match and @p priority
+     * must match exactly, deleting at most one rule (depending on controller behavior).
+     *
+     * @param dpid     Target switch datapath ID.
+     * @param match    Flow match fields in JSON format (e.g., eth_type, ipv4_dst).
+     * @param priority Rule priority. Use -1 to perform non-strict delete.
+     *
+     * @note This function calls the local controller REST API via curl.
      */
-    void deleteAnEntry(uint64_t dpid, json match);
+    void deleteAnEntry(uint64_t dpid, json match, int priority = -1);
     /**
      * @brief Install a flow entry on a switch.
      *

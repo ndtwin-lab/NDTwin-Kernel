@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 #include "ndt_core/collection/TopologyAndFlowMonitor.hpp"
 
@@ -333,7 +337,10 @@ TopologyAndFlowMonitor::updateSwitches(const string& topologyData)
             string switchDpidStr = switchInfoJson.value("dpid", "");
             uint64_t switchDpidUint64 = stoull(switchDpidStr, nullptr, 16);
 
-            SPDLOG_LOGGER_INFO(Logger::instance(), "switchDpidStr {} switchDpidUint64 {}", switchDpidStr, switchDpidUint64);
+            SPDLOG_LOGGER_INFO(Logger::instance(),
+                               "switchDpidStr {} switchDpidUint64 {}",
+                               switchDpidStr,
+                               switchDpidUint64);
 
             // Update switch isUp status
             // Keep Thread Safe
@@ -1838,8 +1845,19 @@ TopologyAndFlowMonitor::bfsAllPathsToDst(
     Graph::vertex_descriptor dstSwitch,
     const uint32_t& dstIp,
     const std::vector<uint32_t>& allHostIps,
-    std::unordered_map<uint64_t, std::vector<std::pair<uint32_t, uint32_t>>>& newOpenflowTables)
+    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>&
+        newOpenflowTables)
 {
+    constexpr uint32_t kHostMask = 0xFFFFFFFFu; // /32
+    constexpr uint32_t kPriority = 100;
+
+    auto ruleExists = [](const auto& flowTable, uint32_t net, uint32_t mask, uint32_t pri) {
+        return std::any_of(flowTable.begin(), flowTable.end(), [&](const auto& entry) {
+            return std::get<0>(entry) == net && std::get<1>(entry) == mask &&
+                   std::get<3>(entry) == pri; // include priority in identity
+        });
+    };
+
     std::unordered_map<Graph::vertex_descriptor, Graph::vertex_descriptor> parent;
     std::unordered_map<Graph::vertex_descriptor, bool> visited;
     std::queue<Graph::vertex_descriptor> q;
@@ -1849,77 +1867,49 @@ TopologyAndFlowMonitor::bfsAllPathsToDst(
     parent[dstSwitch] = NULL_NODE;
     q.push(dstSwitch);
 
-    SPDLOG_LOGGER_DEBUG(Logger::instance(), "dstIp {} ", utils::ipToString(dstIp));
-    SPDLOG_LOGGER_DEBUG(Logger::instance(), "dstSwitch {}", g[dstSwitch].deviceName);
-
-    // Perform BFS starting from dstSwitch
+    // BFS
     while (!q.empty())
     {
         Graph::vertex_descriptor current = q.front();
         q.pop();
 
-        // Stores openflow routing entry to newOpenflowTables ==========
         Graph::vertex_descriptor prev = parent[current];
 
-        if (prev != NULL_NODE) // Skip if current is root (dstSwitch)
+        if (prev != NULL_NODE)
         {
             auto edgePair = boost::edge(current, prev, g);
-            if (edgePair.second) // Edge exists
+            if (edgePair.second)
             {
                 const auto& edgeProps = g[edgePair.first];
 
-                // Get DPID and outPort
-                uint64_t dpid = g[current].dpid;           // Switch we are leaving
-                uint32_t outPort = edgeProps.srcInterface; // Port on prev switch
-
-                SPDLOG_LOGGER_DEBUG(Logger::instance(),
-                                    "Adding OpenFlow entry: switch={}, dstIp={}, outPort={}",
-                                    dpid,
-                                    utils::ipToString(dstIp),
-                                    outPort);
+                uint64_t dpid = g[current].dpid;           // switch that will install the rule
+                uint32_t outPort = edgeProps.srcInterface; // port on *current* leading to prev
+                                                           // (depends on your edge model)
 
                 if (dpid != 0)
-                { // Make sure this node is a switch
-                    // Get reference to flow table for this switch
+                {
                     auto& flowTable = newOpenflowTables[dpid];
 
-                    // Check if dstIp already exists in flow table
-                    bool exists =
-                        std::any_of(flowTable.begin(), flowTable.end(), [dstIp](const auto& entry) {
-                            return entry.first == dstIp; // entry.first is dstIp
-                        });
+                    uint32_t net = dstIp & kHostMask;
+                    uint32_t mask = kHostMask;
 
-                    if (!exists)
+                    if (!ruleExists(flowTable, net, mask, kPriority))
                     {
-                        flowTable.emplace_back(dstIp, outPort);
+                        flowTable.emplace_back(net, mask, outPort, kPriority);
                         SPDLOG_LOGGER_INFO(
                             Logger::instance(),
-                            "Added OpenFlow rule on switch {} for dstIp {} → outPort {}",
+                            "Added OF rule on switch {} for {} /32 -> outPort {} (pri={})",
                             dpid,
-                            utils::ipToString(dstIp),
-                            outPort);
-                    }
-                    else
-                    {
-                        SPDLOG_LOGGER_DEBUG(Logger::instance(),
-                                            "Rule for dstIp {} already exists on switch {}",
-                                            utils::ipToString(dstIp),
-                                            dpid);
+                            utils::ipToString(net),
+                            outPort,
+                            kPriority);
                     }
                 }
             }
-            else
-            {
-                SPDLOG_LOGGER_WARN(Logger::instance(),
-                                   "No edge found from {} to {}",
-                                   g[prev].deviceName,
-                                   g[current].deviceName);
-            }
         }
-        // ================================================================
 
+        // neighbor discovery unchanged...
         std::vector<Graph::vertex_descriptor> neighbors;
-
         for (auto edge : boost::make_iterator_range(boost::out_edges(current, g)))
         {
             Graph::vertex_descriptor neighbor = boost::target(edge, g);
@@ -1940,7 +1930,6 @@ TopologyAndFlowMonitor::bfsAllPathsToDst(
             neighbors.push_back(neighbor);
         }
 
-        // Sort neighbors deterministically by dstHash
         std::sort(neighbors.begin(),
                   neighbors.end(),
                   [this, &dstIp, &g](const auto& a, const auto& b) {
@@ -1949,18 +1938,15 @@ TopologyAndFlowMonitor::bfsAllPathsToDst(
                       return hashDstIp(combinedA) < hashDstIp(combinedB);
                   });
 
-        SPDLOG_LOGGER_DEBUG(Logger::instance(), "current {}", g[current].deviceName);
-        SPDLOG_LOGGER_DEBUG(Logger::instance(), "neighbors number {}", neighbors.size());
         for (Graph::vertex_descriptor neighbor : neighbors)
         {
-            SPDLOG_LOGGER_DEBUG(Logger::instance(), "neighbor {}", g[neighbor].deviceName);
             parent[neighbor] = current;
             visited[neighbor] = true;
             q.push(neighbor);
         }
     }
 
-    // Reconstruct paths from each src host to dst
+    // Path reconstruction (mostly unchanged)
     std::vector<sflow::Path> allPaths;
 
     for (const auto& srcIp : allHostIps)
@@ -1977,12 +1963,10 @@ TopologyAndFlowMonitor::bfsAllPathsToDst(
         }
 
         sflow::Path path;
-        uint32_t srcOutPort;
+        uint32_t srcOutPort = 0;
         Graph::vertex_descriptor srcSwitch;
 
-        // Find host's connected switch and port
         auto edgeOpt = findEdgeByHostIp(srcIp);
-
         if (edgeOpt)
         {
             srcSwitch = boost::target(edgeOpt.value(), g);
@@ -1991,19 +1975,17 @@ TopologyAndFlowMonitor::bfsAllPathsToDst(
         else
         {
             SPDLOG_LOGGER_WARN(Logger::instance(), "No edge found for host IP {}", srcIp);
+            continue;
         }
 
         if (!visited[srcSwitch])
         {
-            // No path from this srcSwitch to dstSwitch
             continue;
         }
 
         path.emplace_back(srcIp, srcOutPort);
 
-        // Traverse parent map from srcSwitch to dstSwitch
         Graph::vertex_descriptor v = srcSwitch;
-
         while (v != dstSwitch)
         {
             Graph::vertex_descriptor nextHop = parent[v];
@@ -2014,57 +1996,42 @@ TopologyAndFlowMonitor::bfsAllPathsToDst(
                 uint32_t outPort = g[edgePair.first].srcInterface;
                 path.emplace_back(nodeId, outPort);
             }
-            else
-            {
-                SPDLOG_LOGGER_WARN(Logger::instance(),
-                                   "No edge found for {} to {}",
-                                   g[v].dpid,
-                                   g[nextHop].dpid);
-            }
             v = nextHop;
         }
 
-        // Add the dstSwitch entry
+        // ---- FIXED dstSwitch -> dstHost edge handling ----
         auto dstHostOpt = findVertexByIp(dstIp);
         if (!dstHostOpt.has_value())
         {
             continue;
         }
+
         auto edgePair = boost::edge(dstSwitch, dstHostOpt.value(), g);
-
-        if (edgeOpt.has_value())
+        if (edgePair.second)
         {
-            path.emplace_back(g[dstSwitch].dpid, g[edgePair.first].srcInterface);
+            uint32_t outPortToHost = g[edgePair.first].srcInterface;
 
-            // Store dstSwitch entry to newOpenFlowTables
+            path.emplace_back(g[dstSwitch].dpid, outPortToHost);
+
+            // also store rule on dstSwitch
             auto& flowTable = newOpenflowTables[g[dstSwitch].dpid];
-            // Check if dstIp already exists in flow table
-            bool exists =
-                std::any_of(flowTable.begin(), flowTable.end(), [dstIp](const auto& entry) {
-                    return entry.first == dstIp; // entry.first is dstIp
-                });
+            uint32_t net = dstIp & kHostMask;
+            uint32_t mask = kHostMask;
 
-            if (!exists)
+            if (!ruleExists(flowTable, net, mask, kPriority))
             {
-                flowTable.emplace_back(dstIp, g[edgePair.first].srcInterface);
+                flowTable.emplace_back(net, mask, outPortToHost, kPriority);
                 SPDLOG_LOGGER_INFO(Logger::instance(),
-                                   "Added OpenFlow rule on switch {} for dstIp {} → outPort {}",
+                                   "Added OF rule on switch {} for {} /32 -> outPort {} (pri={})",
                                    g[dstSwitch].dpid,
-                                   utils::ipToString(dstIp),
-                                   g[edgePair.first].srcInterface);
-            }
-            else
-            {
-                SPDLOG_LOGGER_DEBUG(Logger::instance(),
-                                    "Rule for dstIp {} already exists on switch {}",
-                                    utils::ipToString(dstIp),
-                                    g[dstSwitch].dpid);
+                                   utils::ipToString(net),
+                                   outPortToHost,
+                                   kPriority);
             }
         }
+        // -----------------------------------------------
 
-        // Add dstHost entry
         path.emplace_back(dstIp, 0);
-
         allPaths.push_back(std::move(path));
     }
 

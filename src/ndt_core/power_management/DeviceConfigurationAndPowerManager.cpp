@@ -13,13 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 
-// ndt_core/power_management/DeviceConfigurationAndPowerManager.cpp
 #include "ndt_core/power_management/DeviceConfigurationAndPowerManager.hpp"
 #include "common_types/GraphTypes.hpp"                    // for VertexProp...
 #include "ndt_core/collection/TopologyAndFlowMonitor.hpp" // for TopologyAn...
@@ -546,12 +549,12 @@ DeviceConfigurationAndPowerManager::fetchOpenFlowTablesInternal()
     return result;
 }
 
-std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>>
+std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
 DeviceConfigurationAndPowerManager::getOpenFlowTable(uint64_t defaultDpid)
 {
     SPDLOG_LOGGER_INFO(Logger::instance(), "getOpenFlowTable");
 
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>>
+    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
         openFlowTables;
 
     if (defaultDpid == 0)
@@ -581,7 +584,7 @@ DeviceConfigurationAndPowerManager::getOpenFlowTable(uint64_t defaultDpid)
                                 dpid,
                                 raw);
 
-            std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> flows =
+            std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> flows =
                 parseFlowStatsTextToVector(raw);
 
             // Store in map with dpid as key
@@ -604,7 +607,7 @@ DeviceConfigurationAndPowerManager::getOpenFlowTable(uint64_t defaultDpid)
                             defaultDpid,
                             raw);
 
-        std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> flows =
+        std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> flows =
             parseFlowStatsTextToVector(raw);
 
         // Store in map with dpid as key
@@ -628,11 +631,76 @@ DeviceConfigurationAndPowerManager::parseFlowStatsTextToJson(const std::string& 
     }
 }
 
-std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>
+static bool
+is_digits(const std::string& s)
+{
+    return !s.empty() &&
+           std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); });
+}
+
+static bool
+parseIpv4WithMask(const std::string& s, uint32_t& net, uint32_t& mask)
+{
+    std::string ipPart = s;
+    std::string maskPart;
+
+    if (auto slash = s.find('/'); slash != std::string::npos)
+    {
+        ipPart = s.substr(0, slash);
+        maskPart = s.substr(slash + 1);
+    }
+
+    // default: /32
+    mask = 0xFFFFFFFFu;
+
+    try
+    {
+        uint32_t ip = utils::ipStringToUint32(ipPart);
+
+        if (!maskPart.empty())
+        {
+            if (maskPart.find('.') != std::string::npos)
+            {
+                // dotted mask: 255.255.255.0
+                mask = utils::ipStringToUint32(maskPart);
+            }
+            else if (is_digits(maskPart))
+            {
+                // prefix mask: 24
+                int p = std::stoi(maskPart);
+                if (p < 0 || p > 32)
+                {
+                    return false;
+                }
+                if (p == 0)
+                {
+                    mask = 0u;
+                }
+                else
+                {
+                    mask = 0xFFFFFFFFu << (32 - p); // safe because p!=0
+                }
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        net = ip & mask; // store the network part
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>
 DeviceConfigurationAndPowerManager::parseFlowStatsTextToVector(
     const std::string& responseText) const
 {
-    std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> result;
+    std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> result;
 
     try
     {
@@ -643,60 +711,74 @@ DeviceConfigurationAndPowerManager::parseFlowStatsTextToVector(
         }
 
         auto j = json::parse(responseText);
-
         SPDLOG_LOGGER_TRACE(Logger::instance(), "Parsed JSON:\n{}", j.dump(2));
 
-        for (const auto& [dpid, flows] : j.items()) // DPID as key, flows as array
+        for (const auto& [dpid, flows] : j.items())
         {
             for (const auto& flow : flows)
             {
-                std::string dstIpStr;
+                std::string dstStr;
                 uint32_t outPort = 0;
                 uint32_t priority = 0;
 
-                // Extract dst_ip from match.nw_dst
-                if (flow.contains("match") && flow["match"].contains("nw_dst"))
+                // Accept both OF1.0 (nw_dst) and OF1.3 style (ipv4_dst) just in case
+                if (flow.contains("match"))
                 {
-                    dstIpStr = flow["match"]["nw_dst"].get<std::string>();
+                    const auto& m = flow["match"];
+                    if (m.contains("nw_dst"))
+                    {
+                        dstStr = m["nw_dst"].get<std::string>();
+                    }
+                    else if (m.contains("ipv4_dst"))
+                    {
+                        dstStr = m["ipv4_dst"].get<std::string>();
+                    }
                 }
 
-                // Extract out_port from actions array
                 if (flow.contains("actions"))
                 {
                     for (const auto& action : flow["actions"])
                     {
-                        if (action.is_string())
+                        if (!action.is_string())
                         {
-                            std::string actionStr = action.get<std::string>();
-                            if (actionStr.rfind("OUTPUT:", 0) == 0) // Starts with "OUTPUT:"
-                            {
-                                std::string portStr = actionStr.substr(7); // Skip "OUTPUT:"
-
-                                if (!portStr.empty() &&
-                                    std::all_of(portStr.begin(), portStr.end(), ::isdigit))
-                                {
-                                    outPort = static_cast<uint32_t>(std::stoul(portStr));
-                                    break; // Take first OUTPUT port
-                                }
-
-                                // outPort = static_cast<uint32_t>(std::stoul(portStr));
-
-                                break; // Take first OUTPUT port
-                            }
+                            continue;
                         }
+                        const std::string a = action.get<std::string>();
+                        if (a.rfind("OUTPUT:", 0) != 0)
+                        {
+                            continue;
+                        }
+
+                        std::string portStr = a.substr(7);
+                        if (!portStr.empty() &&
+                            std::all_of(portStr.begin(), portStr.end(), [](unsigned char c) {
+                                return std::isdigit(c);
+                            }))
+                        {
+                            outPort = static_cast<uint32_t>(std::stoul(portStr));
+                        }
+                        break; // take first OUTPUT
                     }
                 }
 
-                // Extract priority
                 if (flow.contains("priority"))
                 {
-                    priority = flow["priority"].get<std::uint32_t>();
+                    priority = flow["priority"].get<uint32_t>();
                 }
 
-                if (!dstIpStr.empty() && outPort != 0)
+                if (!dstStr.empty() && outPort != 0)
                 {
-                    uint32_t dstIp = utils::ipStringToUint32(dstIpStr);
-                    result.emplace_back(std::make_tuple(dstIp, outPort, priority));
+                    uint32_t net = 0, mask = 0;
+                    if (parseIpv4WithMask(dstStr, net, mask))
+                    {
+                        result.emplace_back(net, mask, outPort, priority);
+                    }
+                    else
+                    {
+                        SPDLOG_LOGGER_WARN(Logger::instance(),
+                                           "Failed to parse dst/mask: {}",
+                                           dstStr);
+                    }
                 }
             }
         }
@@ -1377,7 +1459,7 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
     const auto& mods = j.value("modify_flow_entries", json::array());
     const auto& dels = j.value("delete_flow_entries", json::array());
 
-    std::lock_guard<std::shared_mutex> lock(m_statusMutex);
+    std::lock_guard<std::shared_mutex> lock(m_openflowTablesMutex);
 
     // Get (or create) the flow array for a given dpid.
     auto getFlowsArrayForDpid = [this](uint64_t dpid) -> json& {

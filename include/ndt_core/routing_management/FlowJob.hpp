@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 #pragma once
 #include <cstdint>
@@ -35,32 +39,39 @@ enum class FlowOp : uint8_t
 };
 
 /**
- * @brief A unit of work representing one flow rule operation on a specific switch (DPID).
+ * @brief A unit of work for OpenFlow rule updates.
  *
- * FlowJob is the message passed from higher-level handlers (API/events/routing logic)
- * to the FlowDispatcher / FlowRoutingManager layer. Each job specifies:
- *  - which switch to program (dpid),
- *  - which operation to perform (install/modify/delete),
- *  - match criteria (JSON),
- *  - actions for install/modify (JSON array),
- *  - optional metadata to speed up downstream processing and improve observability.
+ * FlowJob represents one requested change to a switch flow table (install/modify/delete).
+ * It carries the original JSON match/actions payload to send southbound, and also caches
+ * parsed IPv4 destination information for fast lookups and “affected-flow” recomputation.
  *
- * JSON expectations (by convention in this codebase):
- *  - match must include "ipv4_dst" (string) for install/modify and often for delete.
- *  - actions is used for Install/Modify; may be empty for Delete.
+ * Fields:
+ *  - dpid: Target switch datapath ID.
+ *  - op: Operation type (Install / Modify / Delete).
+ *  - priority: Flow priority (OpenFlow rule priority).
+ *  - match: Match fields in JSON form (e.g., eth_type, ipv4_dst).
+ *  - actions: Actions in JSON form (e.g., OUTPUT port).
+ *
+ * Cached destination IPv4 (host byte order):
+ *  - dstIpU32: Destination IPv4 address (the IP part).
+ *  - dstMaskU32: Destination mask derived from prefix length (e.g., /24 -> 255.255.255.0).
+ *  - dstPrefixLen: CIDR prefix length (0..32). Defaults to 32 (/32 host route).
+ *
+ *  - idleTimeout: Optional idle timeout in seconds (0 means no idle timeout unless your controller
+ *    interprets it differently).
  */
-struct FlowJob
-{
+
+struct FlowJob {
     uint64_t dpid;
     FlowOp op;
+    int priority;
+    nlohmann::json match;
+    nlohmann::json actions;
 
-    // Core fields your handlers already use
-    int priority = 0;                                 // not used for Delete, but harmless
-    nlohmann::json match;                             // must include "ipv4_dst" (string)
-    nlohmann::json actions = nlohmann::json::array(); // for Install/Modify
+    uint32_t dstIpU32 = 0;        // host-order IP
+    uint32_t dstMaskU32 = 0xFFFFFFFFu;
+    uint8_t  dstPrefixLen = 32;
 
-    // Optional metadata
-    uint32_t dstIpU32 = 0; // parsed once for fast routing/cache
     int idleTimeout = 0;
-    std::string corrId; // for tracing (optional)
 };
+

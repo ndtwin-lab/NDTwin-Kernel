@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * The NDTwin Authors and Contributors:
+ * NDTwin core contributors (as of January 15, 2026):
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
+ *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
+ *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 
 #pragma once
@@ -143,9 +147,9 @@ class DeviceConfigurationAndPowerManager
      *
      * @param dpid If non-zero, return entries only for the specified switch DPID.
      *             If zero, return entries for all switches.
-     * @return Map: dpid -> list of (dstIp, outPort, priority) tuples.
+     * @return Map: dpid -> list of (dstIp, outPort, priority, mask) tuples.
      */
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>>
+    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
     getOpenFlowTable(uint64_t dpid = 0);
     /**
      * @brief Get the latest cached CPU utilization report.
@@ -209,7 +213,7 @@ class DeviceConfigurationAndPowerManager
     // Query Mininet topology for switch up/down state
     json queryMininet(const std::string& ipParam) const;
     json parseFlowStatsTextToJson(const std::string& responseText) const;
-    std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> parseFlowStatsTextToVector(
+    std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> parseFlowStatsTextToVector(
         const std::string& responseText) const;
 
     bool pingSwitch(const std::string& ip, int timeout_sec);
