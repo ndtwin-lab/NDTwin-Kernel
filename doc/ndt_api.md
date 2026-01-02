@@ -1449,8 +1449,6 @@ Updates the nickname of a device (e.g., a switch or host) in the network topolog
       "details": "Invalid identifier type: ip"
     }
     ```
-Of course. Here is the API documentation for your temperature function, written in the same style as your example.
-
 -----
 
 ## 22. GET /ndt/get_temperature
@@ -1498,12 +1496,6 @@ This function is designed to work in two modes:
 #### Error 
 
 No specific error responses are defined for this endpoint. The status of each individual switch (e.g., if it's down or unsupported) is reported within the body of a `200 OK` success response, as shown above. Any critical server-side failure would result in a standard `500 Internal Server Error`.
-
-
-
-Of course. Here is the updated API documentation that illustrates how the endpoint works when the `src_ip` and `dst_ip` parameters are omitted.
-
-The main change is that providing these parameters is now **optional**. If you omit them, the API returns a complete list of all known paths and their switch counts.
 
 -----
 
@@ -2391,8 +2383,8 @@ Busy / Invalid Type
 * **Status: 423 Locked**
 ```json
 {
-  "error": "Lock acquisition failed",
-  "detail": "System busy or invalid lock type: routing_lock"
+  "error": "Lock release failed", 
+  "detail": "..."
 }
 ```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.

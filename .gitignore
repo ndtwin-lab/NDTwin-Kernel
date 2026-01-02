@@ -1,3 +1,5 @@
 build/
 bin/
 setting/AppConfig.hpp
+include/utils/AppConfig.hpp
+.gitignore
