@@ -17,7 +17,7 @@
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
- *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica>
  *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
  *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
  *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "../setting/AppConfig.hpp"
 #include "common_types/GraphTypes.hpp" // for Graph
 #include "common_types/SFlowType.hpp"  // for FlowKey, Path
 #include "utils/Utils.hpp"             // for DeploymentMode
@@ -43,14 +44,13 @@
 #include <unordered_map>               // for unordered_map
 #include <utility>                     // for pair
 #include <vector>                      // for vector
-#include "utils/AppConfig.hpp"
 
 // We don't need to use constexpr std::string_view
 // Cuz the files are used for ifstream (which needs std::string as the param type)
 // static const std::string TOPOLOGY_FILE = "../StaticNetworkTopology_ipAlias4_10Switches.json";
 static const std::string TOPOLOGY_FILE = AppConfig::TOPOLOGY_FILE;
-    
-static const std::string TOPOLOGY_FILE_MININET = "../StaticNetworkTopologyMininet_10Switches.json";
+
+static const std::string TOPOLOGY_FILE_MININET = AppConfig::TOPOLOGY_FILE_MININET;
 
 static constexpr uint64_t EMPTY_LINK_THRESHOLD = 700000000;
 static constexpr uint64_t MICE_FLOW_UNDER_THRESHOLD = 10000000;
@@ -170,11 +170,8 @@ class TopologyAndFlowMonitor
     void setVertexDisable(Graph::vertex_descriptor v);
     std::pair<uint64_t, uint32_t> getEdgeStats(Graph::edge_descriptor e) const;
     std::pair<uint64_t, uint32_t> getEdgeStatsNoLock(Graph::edge_descriptor e) const;
-    // void setEdgeFlow(Graph::edge_descriptor e, sflow::FlowKey key, bool isAlive);
-    // void setEdgeFlowNoLock(Graph::edge_descriptor e, sflow::FlowKey key, bool isAlive);
     std::set<sflow::FlowKey> getEdgeFlowSet(Graph::edge_descriptor e) const;
     std::set<sflow::FlowKey> getEdgeFlowSetNoLock(Graph::edge_descriptor e) const;
-    int getEdgeElephantFlowCount(Graph::edge_descriptor e) const;
     Graph getGraph() const;
     void setVertexDeviceName(Graph::vertex_descriptor v, std::string name);
     void setVertexNickname(Graph::vertex_descriptor v, std::string name);
@@ -218,7 +215,8 @@ class TopologyAndFlowMonitor
         Graph::vertex_descriptor dstSwitch,
         const uint32_t& dstIp,
         const std::vector<uint32_t>& allHostIps,
-        std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>&
+        std::unordered_map<uint64_t,
+                           std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>&
             newOpenflowTables);
 
     json getStaticTopologyJson();

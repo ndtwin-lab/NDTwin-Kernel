@@ -43,7 +43,6 @@
 using json = nlohmann::json;
 
 FlowRoutingManager::FlowRoutingManager(
-    std::string apiUrl,
     std::shared_ptr<TopologyAndFlowMonitor> topologyAndFlowMonitor,
     std::shared_ptr<sflow::FlowLinkUsageCollector> collector,
     std::shared_ptr<EventBus> eventBus)

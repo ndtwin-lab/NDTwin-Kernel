@@ -1,65 +1,9 @@
 # NDT RESTful API Documentation
-## 1. [Deprecated] POST /ndt/flow_added
+## 1. POST /ndt/link_failure_detected
 ### Description
-Receives a list of candidate paths for a new flow and emits a **FlowAdded** event. Responds with the selected path or a message if the flow was already installed.
+Called by Ryu when a link-down event is detected. Marks the edge(s) DOWN and emits internal events.
 ### Request
-* Content-Type: **application/json**
-* Body
-```json
-{
-  "all_paths": [
-    [
-      [56928448, 1],
-      [106225808402492, 23],
-      [106225808387660, 24], 
-      [106225808391692, 1],
-      [325363904, 0]
-    ],
-    ...
-  ]
-}
-```
-### Response
-#### Success
-* Status: **200 OK**
-* Body (if a new path is selected)
-```json
-{
-  "status": "path selected",
-  "path": [
-    [56928448, 1],
-    [106225808402492, 23],
-    [106225808387660, 24],
-    [106225808391692, 1],
-    [325363904, 0]
-  ]
-}
-```
-* Body (if flow is already installed)
-```json
-{
-  "status": "flow already installed"
-}
-```
-#### Error
-* Status: **400 Bad Request**
-```json
-{
-  "error": "Invalid PacketInPayload format"
-}
-```
-* **Status: 500 Internal Server Error**
-```json
-{
-  "error": "internal server error"
-}
-```
-
-
-## 2. POST /ndt/link_failure_detected
-### Description
-Handles link failure notification. Marks the forward and reverse edges in the topology as down and emits **LinkFailureDetected** events.
-### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body (the information of failed link)
 ```json
@@ -97,12 +41,36 @@ Handles link failure notification. Marks the forward and reverse edges in the to
   "error": "internal server error"
 }
 ```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
 
-## 3. POST /ndt/link_recovery_detected
+## 2. POST /ndt/link_recovery_detected
 ### Description
-Handles link recovery events. Marks the forward and reverse edges in the topology as up.
+Called by Ryu when a failed link becomes UP. Marks the edge(s) UP.
 ### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body (the information of recovered link)
 ```json
@@ -134,18 +102,37 @@ Handles link recovery events. Marks the forward and reverse edges in the topolog
   "error": "edge not found in topology"
 }
 ```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
 * **Status: 500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
 
-## 4. GET /ndt/get_graph_data
+## 3. GET /ndt/get_graph_data
 ### Description
-Returns the complete graph topology configured in StaticNetworkTopology.json including nodes and edges, flow information, and edge status.
+Returns the complete graph topology configured in *setting/StaticNetworkTopology.json* including nodes and edges, flow information, and edge status.
 **vertex_type = 0** means a switch, and **vertex_type = 1** means a host.
+**is_up** suggests whether a device reply ping.
+**is_enable** in switch node suggests whether the switch is connected to controller. 
 At the edge between the switch and host, the dpid and interface on the host side are set to 0.
 ### Request
 * Method: **GET**
@@ -230,15 +217,32 @@ At the edge between the switch and host, the dpid and interface on the host side
 }
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
 * **Status: 500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
 
-## 5. GET /ndt/get_detected_flow_data
+## 4. GET /ndt/get_detected_flow_data
 ### Description
 Returns detailed information about all active flows observed by the network system (sFLow), including their estimated sending rates, timestamps, protocol type, and the full path taken across the network.
 
@@ -339,15 +343,32 @@ Returns detailed information about all active flows observed by the network syst
 ]
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
 * **Status: 500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
 
-## 6. GET /ndt/get_switch_openflow_table_entries
+## 5. GET /ndt/get_switch_openflow_table_entries
 ### Description
 Returns raw OpenFlow flow table entries directly from each switch in the topology. 
 
@@ -392,16 +413,33 @@ Each entry includes the DPID of the switch and the exact OpenFlow flow entries a
 ]
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
 * **Status: 500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
-## 7. GET /ndt/get_power_report
+## 6. GET /ndt/get_power_report
 ### Description
-Returns the estimated power consumption (in milliwatts, mW) of each switch over the past five minutes. The behavior varies based on deployment mode:
+Returns the estimated power consumption (in watts, W) of each switch over the past five minutes. The behavior varies based on deployment mode:
 
 In MININET mode, random values are generated for demonstration purposes.
 
@@ -434,187 +472,32 @@ In TESTBED mode, power values are collected via SSH from each switch's IP addres
 ]
 ```
 #### Error
-* **Status: 500 Internal Server Error**
-```json
-{
-  "error": "internal server error"
-}
-```
-
-
-## 8. POST /ndt/disable_switch
-### Description
-Executes a simulation to recalculate all-destination routing entries while excluding the disabled switch using hash routing policy and returns the differences in the OpenFlow table for each switch.
-
-Disables the switch and the links connected to it (sets is_enabled to false).
-
-
-### Request
-* Content-Type: **application/json**
-* Body
-```json
-{
-  "dpid": 106225808387660
-}
-```
-### Response
-#### Success
-* Status: **200 OK**
-```json
-[
-  {
-    "dpid": 106225808391692,
-    "modified": [
-      {
-        "dst_ip": 939632832,
-        "new_output_interface": 24,
-        "old_output_interface": 23
-      },
-      ...
-    ]
-  },
-  {
-    "dpid": 106225808387660,
-    "removed": [
-      {
-        "dst_ip": 16885952,
-        "old_output_interface": 23
-      },
-      ...
-    ]
-  },
-  ...
-]
-```
-#### Error
-* **Status: 500 Internal Server Error**
-```json
-{
-  "error": "internal server error"
-}
-```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
 * **Status: 400 Bad Request**
 ```json
 {
-  "error": "Missing dpid"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 404 Not Found**
-```json
-{
-  "error": "Switch not found"
-}
-```
-
-
-## 9. POST /ndt/enable_switch
-### Description
-Re-enables a previously disabled switch and all its associated links in the network topology.
-
-
-### Request
-* Content-Type: **application/json**
-* Body
-```json
-{
-  "dpid": 106225808387660
-}
-```
-### Response
-#### Success
-* Status: **200 OK**
-```json
-{
-  "status": "enable switch processed"
-}
-```
-#### Error
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
 * **Status: 500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 400 Bad Request**
-```json
-{
-  "error": "Missing dpid"
-}
-```
-* **Status: 404 Not Found**
-```json
-{
-  "error": "Switch not found"
-}
-```
-
-
-## 10. [Deprecated] POST /ndt/install_a_new_path_for_a_flow
-### Description
-Installs a new path for a specific (existing) flow by specifying the source and destination IPs, along with a list of **[dpid/ip, interface]** pairs representing the full path. This API calls the internal **migrateAFlow()** method to reroute the flow according to the provided path.
-
-
-### Request
-* Content-Type: **application/json**
-* Body
-```json
-{
-  "src_ip": 23374016, 
-  "dst_ip": 291809472, 
-  "path": [
-      [
-        23374016,
-        0
-      ],
-      [
-        106225808402492,
-        24
-      ],
-      [
-        106225808380928,
-        24
-      ],
-      [
-        106225808391692,
-        0
-      ],
-      [
-        291809472,
-        0
-      ]
-  ]
-}
-```
-### Response
-#### Success
-* Status: **200 OK**
-```json
-{
-  "status": "Flow path installed successfully"
-}
-```
-#### Error
+Returned when an unknown exception type is thrown.
 * **Status: 500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
-}
-```
-* **Status: 400 Bad Request**
-```json
-{
-  "error": "Missing src_ip, dst_ip, or path"
-}
-```
-* **Status: 400 Bad Request**
-```json
-{
-  "error": "Each path element must be an array of [dpid/ip, interface]"
+  "error": "An unknown error occurred"
 }
 ```
 
 
-## 11. GET /ndt/get_switches_power_state
+## 7. GET /ndt/get_switches_power_state
 
 ### Description
 Query the power state of one or all switches.  
@@ -635,7 +518,7 @@ Results are returned as a JSON object where each key is a switch IP and each val
   ip (optional) — the switch IP to query; if omitted, returns all switches
 
 ### Response
-
+* Method: **GET**
 #### Success
 
 * Status: **200 OK**
@@ -673,16 +556,16 @@ Results are returned as a JSON object where each key is a switch IP and each val
 }
 ```
 
-## 12. POST /ndt/set_switches_power_state
+## 8. POST /ndt/set_switches_power_state
 
 ### Description
 
 Sends a power control command to one of the network switches by interacting with the smart plug associated with it.
 
 ### Request
-
+* Method: **POST**
 * Content-Type: **application/json**
-* Required Query Parameters:
+* Query Parameters:
 
 | Parameter | Type   | Description                            |
 | --------- | ------ | -------------------------------------- |
@@ -709,24 +592,37 @@ POST "http://localhost:8000/ndt/set_switches_power_state?ip=10.10.10.10&action=o
 ```
 
 #### Error
-
-* **Status: 500 Internal Server Error**
-
-```json
-{
-  "error": "Internal server error while processing the power control request"
-}
-```
-
 * **Status: 400 Bad Request**
-
 ```json
 {
   "error": "Missing or malformed query parameters"
 }
 ```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
-## 13. POST /ndt/install_flow_entry
+## 9. POST /ndt/install_flow_entry
 ### Description
 Installs a new OpenFlow flow entry in a specific switch via the Ryu controller. 
 
@@ -765,19 +661,38 @@ Reconstructs the new path for affected flows and updates the allPathMap.
 
 ```
 #### Error
-* Status: **400 Bad Request**
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
 
-## 14. POST /ndt/delete_flow_entry
+## 10. POST /ndt/delete_flow_entry
 ### Description
 Deletes flow entries from a switch based on match fields. 
 
-Internally sends a **flowentry/delete** request to the Ryu controller.
+* If the request body does not include "priority", NDT forwards the request to Ryu **/stats/flowentry/delete** (non-strict delete).
+
+* If the request body includes "priority", NDT forwards the request to Ryu **/stats/flowentry/delete_strict** (strict delete, exact match+priority).
 
 Reconstructs the new path for affected flows and updates the allPathMap.
 
@@ -803,16 +718,33 @@ Reconstructs the new path for affected flows and updates the allPathMap.
 }
 ```
 #### Error
-* Status: **400 Bad Request**
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
 
 
-## 15. POST /ndt/modify_flow_entry
+## 11. POST /ndt/modify_flow_entry
 ### Description
 Modifies an existing flow entry by matching criteria and applying new actions. 
 
@@ -849,17 +781,34 @@ Reconstructs the new path for affected flows and updates the allPathMap.
 }
 ```
 #### Error
-* Status: **400 Bad Request**
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
 
-## 16. GET /ndt/get_cpu_utilization
+## 12. GET /ndt/get_cpu_utilization
 ### Description
-Returns the current CPU utilization(%) of all up switches in the network topology. Uses SNMP OID **1.3.6.1.4.1.1991.1.1.2.1.52.0** to retrieve CPU data. 
+Returns the current CPU utilization(%) of all up switches in the network topology. Uses SNMP to retrieve CPU data. 
 
 In MININET mode, dummy values are generated for demonstration purposes.
 
@@ -875,9 +824,9 @@ In MININET mode, dummy values are generated for demonstration purposes.
 A value of -1 means SNMP query failed or data is unavailable.
 
 
-## 17. GET /ndt/get_memory_utilization
+## 13. GET /ndt/get_memory_utilization
 ### Description
-Returns the memory utilization(%) of all up switches using SNMP OID **1.3.6.1.4.1.1991.1.1.2.1.53.0.**
+Returns the memory utilization(%) of all up switches using SNMP.
 
 In MININET mode, dummy values are generated for demonstration purposes.
 
@@ -893,7 +842,7 @@ In MININET mode, dummy values are generated for demonstration purposes.
 A value of -1 means SNMP query failed or data is unavailable.
 
 
-## 18. GET /ndt/inform_switch_entered
+## 14. GET /ndt/inform_switch_entered
 ### Description
 Notifies the NDT system that a new switch has entered the network (i.e., connected). This will mark the switch as “up” in the internal topology.
 
@@ -932,9 +881,32 @@ GET "http://localhost:8000/ndt/inform_switch_entered?dpid=106225808402492"
   "error": "Switch not found"
 }
 ```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
 
-## 19. POST /ndt/modify_device_name
+## 15. POST /ndt/modify_device_name
 ### Description
 Updates the name of a switch or host in the NDT topology and StaticNetworkTopology.json.
 
@@ -987,13 +959,33 @@ Updates the name of a switch or host in the NDT topology and StaticNetworkTopolo
   "error": 	"Device not found."
 }
 ```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
-## 20. GET /ndt/get_static_topology_json
+## 16. GET /ndt/get_static_topology_json
 ### Description
 Generates the current topology StaticNetworkTopology content.
-
-The detailed demonstration video is available at the following link:
-https://hackmd.io/@pyjuan91/patty
 
 ### Request
 * Method: **GET**
@@ -1038,7 +1030,42 @@ https://hackmd.io/@pyjuan91/patty
 }
 ```
 
-## 21. POST /ndt/app_register
+
+### Response
+#### Success
+* Status: **200 OK**
+```json
+{
+  "status": "success"
+}
+```
+
+#### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
+
+## 17. POST /ndt/app_register
 ### Description
 Registers a new application with the server.
 When an application is registered:
@@ -1050,6 +1077,7 @@ When an application is registered:
 - This folder can be used by the application to store its simulation files.
 
 ### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body
 ```json
@@ -1076,27 +1104,38 @@ When an application is registered:
   "error": "Missing or invalid 'appName'"
 }
 ```
-* Status: **400 Bad Request**
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
 ```json
 {
-  "error": "Invalid JSON body"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
 * **Status: 500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
-## 22. POST /ndt/received_a_simulation_case
+## 18. POST /ndt/received_a_simulation_case
 
 ### Description
 
 Notifies the NDT server that a new simulation case has been dispatched by an external simulator and reply the response from simulation server.
 
 ### Request
-
+* Method: **POST**
 * **Content-Type:** `application/json`
 * **Body Parameters:**
 
@@ -1133,31 +1172,40 @@ Notifies the NDT server that a new simulation case has been dispatched by an ext
 
 #### Error
 
-* **Status:** `400 Bad Request`
-
-  ```json
-  {
-    "error": "Missing or invalid fields in request body"
-  }
-  ```
-* **Status:** `500 Internal Server Error`
-
-  ```json
-  {
-    "error": "internal server error"
-  }
-  ```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
 ---
 
-## 23. POST /ndt/simulation_completed
+## 19. POST /ndt/simulation_completed
 
 ### Description
 
 Called by the external simulator when a simulation finishes. The server will forward the result URL to the registered application via the SimulationRequestManager’s callback.
 
 ### Request
-
+* Method: **POST**
 * **Content-Type:** `application/json`
 * **Body Parameters:**
 
@@ -1189,24 +1237,32 @@ Called by the external simulator when a simulation finishes. The server will for
   ```
 
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
-* **Status:** `400 Bad Request`
 
-  ```json
-  {
-    "error": "Missing or invalid fields in request body"
-  }
-  ```
-* **Status:** `500 Internal Server Error`
-
-  ```json
-  {
-    "error": "internal server error"
-  }
-  ```
-
-
-## 24.GET /ndt/get_nickname
+## 20.GET /ndt/get_nickname
 
 -----
 
@@ -1219,7 +1275,7 @@ If multiple parameters are provided, they are processed in the following order o
 -----
 
 ### Request
-
+* Method: **GET**
   * **Query Parameters**:
 
     > At least one of the following parameters is required.
@@ -1241,7 +1297,7 @@ If multiple parameters are provided, they are processed in the following order o
 
 ### Response
 
-#### Success ✅
+#### Success 
 
   * **Status**: `200 OK`
 
@@ -1253,40 +1309,54 @@ If multiple parameters are provided, they are processed in the following order o
     }
     ```
 
-#### Error ❌
+#### Error 
+Returned when a valid identifier is provided, but no matching device is found in the topology.
+* **Status: 404 Not Found**
+```json
+{
+  "error": "Device not found"
+}
+```
+Returned if no identifier parameter (`dpid`, `mac`, or `name`) is provided in the URL.
+* **Status: 404 Not Found**
+```json
+{
+  "error": "Missing dpid, mac, or name parameter"
+}
+```
+Returned if an identifier has an invalid format (e.g., a non-numeric DPID).
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "Invalid DPID format",
+  "details": "stoull"
+}
+```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
-  * **Status**: `404 Not Found`
-
-    > Returned when a valid identifier is provided, but no matching device is found in the topology.
-
-    ```json
-    {
-      "error": "Device not found"
-    }
-    ```
-
-  * **Status**: `400 Bad Request`
-
-    > Returned if no identifier parameter (`dpid`, `mac`, or `name`) is provided in the URL.
-
-    ```json
-    {
-      "error": "Missing dpid, mac, or name parameter"
-    }
-    ```
-
-  * **Status**: `400 Bad Request`
-
-    > Returned if an identifier has an invalid format (e.g., a non-numeric DPID).
-
-    ```json
-    {
-      "error": "Invalid DPID format",
-      "details": "stoull"
-    }
-    ```
-
-## 25. POST /ndt/modify_nickname
+## 21. POST /ndt/modify_nickname
 
 -----
 
@@ -1297,7 +1367,7 @@ Updates the nickname of a device (e.g., a switch or host) in the network topolog
 -----
 
 ### Request
-
+* Method: **POST**
   * **Content-Type**: `application/json`
 
   * **Body Parameters**:
@@ -1305,8 +1375,8 @@ Updates the nickname of a device (e.g., a switch or host) in the network topolog
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `identifier` | `object` | Yes | An object containing the unique identifier for the device. |
-| `↳ identifier.type` | `string` | Yes | Specifies the type of identifier. Must be one of: `"dpid"`, `"mac"`, or `"name"`. |
-| `↳ identifier.value`| `int`,`uint64` or `string` | Yes | The value corresponding to the identifier type (e.g., a DPID for `dpid`, a MAC address string for `mac`). |
+| `identifier.type` | `string` | Yes | Specifies the type of identifier. Must be one of: `"dpid"`, `"mac"`, or `"name"`. |
+| `identifier.value`| `int`,`uint64` or `string` | Yes | The value corresponding to the identifier type (e.g., a DPID for `dpid`, a MAC address string for `mac`). |
 | `new_nickname` | `string` | Yes | The new nickname to assign to the device. |
   
   * **Body (Example by DPID)**
@@ -1348,7 +1418,7 @@ Updates the nickname of a device (e.g., a switch or host) in the network topolog
 
 ### Response
 
-#### Success ✅
+#### Success 
 
   * **Status**: `200 OK`
   * **Body**
@@ -1359,7 +1429,7 @@ Updates the nickname of a device (e.g., a switch or host) in the network topolog
     }
     ```
 
-#### Error ❌
+#### Error 
 
   * **Status**: `404 Not Found`
 
@@ -1383,7 +1453,7 @@ Of course. Here is the API documentation for your temperature function, written 
 
 -----
 
-## 26. GET /ndt/get_temperature
+## 22. GET /ndt/get_temperature
 
 **Description**
 
@@ -1397,10 +1467,7 @@ This function is designed to work in two modes:
 -----
 
 ### Request
-
-**Query Parameters:**
-
-This endpoint does not take any query parameters.
+* Method: **GET**
 
 **Example URL:**
 
@@ -1412,7 +1479,7 @@ This endpoint does not take any query parameters.
 
 ### Response
 
-#### Success ✅
+#### Success 
 
 **Status**: `200 OK`
 
@@ -1428,7 +1495,7 @@ This endpoint does not take any query parameters.
 
 -----
 
-#### Error ❌
+#### Error 
 
 No specific error responses are defined for this endpoint. The status of each individual switch (e.g., if it's down or unsupported) is reported within the body of a `200 OK` success response, as shown above. Any critical server-side failure would result in a standard `500 Internal Server Error`.
 
@@ -1440,7 +1507,7 @@ The main change is that providing these parameters is now **optional**. If you o
 
 -----
 
-## 27. GET /ndt/get_path_switch_count
+## 23. GET /ndt/get_path_switch_count
 
 -----
 
@@ -1454,7 +1521,7 @@ Retrieves the number of switches along network paths.
 -----
 
 ### Request
-
+* Method: **GET**
   * **Query Parameters**:
 
 | Parameter | Type     | Required | Description                                                                                 |
@@ -1472,7 +1539,7 @@ Retrieves the number of switches along network paths.
 
 ### Response
 
-#### Success (Specific Path) ✅
+#### Success (Specific Path) 
 
   * **Status**: `200 OK`
 
@@ -1487,7 +1554,7 @@ Retrieves the number of switches along network paths.
     }
     ```
 
-#### Success (All Paths) ✅
+#### Success (All Paths) 
 
   * **Status**: `200 OK`
 
@@ -1511,7 +1578,7 @@ Retrieves the number of switches along network paths.
     }
     ```
 
-#### Error ❌
+#### Error 
 
   * **Status**: `404 Not Found`
 
@@ -1524,14 +1591,14 @@ Retrieves the number of switches along network paths.
     }
     ```
 
-## 28. POST /ndt/install_flow_entries_modify_flow_entries_and_delete_flow_entries
+## 24. POST /ndt/install_flow_entries_modify_flow_entries_and_delete_flow_entries
 
 ### Description
 
 Installs, modifies and deletes OpenFlow entries in one request. For each installation/modification/deletion, the server updates rules and recalculates affected paths, then returns a success status.
 
 ### Request
-
+* Method: **POST**
 * **Content-Type:** `application/json`
 * **Body Parameters:**
 
@@ -1555,6 +1622,7 @@ Installs, modifies and deletes OpenFlow entries in one request. For each install
   | ------------ | ------ | ------------------------------------------------------------- |
   | `dpid`     | integer | Switch datapath ID (uint64).   |
   | `match`    | object | 	Match fields.          |
+  | `priority`   | integer | 	Rule priority (optional; defaults to -1 if missing)          |
 
 
 ```json
@@ -1670,13 +1738,14 @@ Installs, modifies and deletes OpenFlow entries in one request. For each install
   }
   ```
 
-## 29. POST /ndt/install_group_entry
+## 25. POST /ndt/install_group_entry
 ### Description
 Installs a new OpenFlow group entry in a specific switch via the Ryu controller. 
 
 The API constructs and sends a **groupentry/add** POST request to Ryu.
 
 ### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body
 ```json
@@ -1714,13 +1783,14 @@ The API constructs and sends a **groupentry/add** POST request to Ryu.
 ```
 
 
-## 30. POST /ndt/delete_group_entry
+## 26. POST /ndt/delete_group_entry
 ### Description
 Deletes a new OpenFlow group entry in a specific switch via the Ryu controller. 
 
 The API constructs and sends a **groupentry/delete** POST request to Ryu.
 
 ### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body
 ```json
@@ -1753,13 +1823,14 @@ The API constructs and sends a **groupentry/delete** POST request to Ryu.
 }
 ```
 
-## 31. POST /ndt/modify_group_entry
+## 27. POST /ndt/modify_group_entry
 ### Description
 Modifies a new OpenFlow group entry in a specific switch via the Ryu controller. 
 
 The API constructs and sends a **groupentry/modify** POST request to Ryu.
 
 ### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body
 ```json
@@ -1795,13 +1866,14 @@ The API constructs and sends a **groupentry/modify** POST request to Ryu.
 }
 ```
 
-## 32. POST /ndt/install_meter_entry
+## 28. POST /ndt/install_meter_entry
 ### Description
 Installs a new OpenFlow meter entry in a specific switch via the Ryu controller. 
 
 The API constructs and sends a **meterentry/add** POST request to Ryu.
 
 ### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body
 ```json
@@ -1837,13 +1909,14 @@ The API constructs and sends a **meterentry/add** POST request to Ryu.
 }
 ```
 
-## 33. POST /ndt/delete_meter_entry
+## 29. POST /ndt/delete_meter_entry
 ### Description
 Deletes a new OpenFlow meter entry in a specific switch via the Ryu controller. 
 
 The API constructs and sends a **meterentry/delete** POST request to Ryu.
 
 ### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body
 ```json
@@ -1875,13 +1948,14 @@ The API constructs and sends a **meterentry/delete** POST request to Ryu.
 }
 ```
 
-## 34. POST /ndt/modify_meter_entry
+## 30. POST /ndt/modify_meter_entry
 ### Description
 Modifies a new OpenFlow meter entry in a specific switch via the Ryu controller. 
 
 The API constructs and sends a **meterentry/modify** POST request to Ryu.
 
 ### Request
+* Method: **POST**
 * Content-Type: **application/json**
 * Body
 ```json
@@ -1918,7 +1992,7 @@ The API constructs and sends a **meterentry/modify** POST request to Ryu.
 ```
 
 
-## 35. GET /ndt/get_openflow_capacity
+## 31. GET /ndt/get_openflow_capacity
 ### Description
 
 ### Request
@@ -1993,16 +2067,14 @@ The API constructs and sends a **meterentry/modify** POST request to Ryu.
 }
 ```
 
-## 36. GET /ndt/historical_logging
+## 32. GET /ndt/historical_logging
 ### Description
 Enable or disable historical logging in the system.
 The state is set by passing the query parameter state with value enable or disable.
 
-
-
 ### Request
 * Method: **GET**
-* URL Parameters:
+* Query Parameters:
     * state (required): must be either "enable" or "disable"
 ### Example
 ```shell
@@ -2033,65 +2105,320 @@ The state is set by passing the query parameter state with value enable or disab
 }
 ```
 
-
-## 37. GET /ndt/historical_logging
-
------
-
+## 33. GET /ndt/get_average_link_usage
 ### Description
-
-Enables or disables the system-wide historical data logging feature. The desired state is controlled via a query parameter.
-
------
+Returns the average link utilization across all UP inter-switch links (host-facing links are excluded).
+Only links with non-zero link_bandwidth_usage_bps are included in the average.
 
 ### Request
+* Method: **GET**
+### Example
+```shell
+ GET "http://127.0.0.1:8000/ndt/get_average_link_usage"
+```
+### Response
+#### Success
+* Status: **200 OK**
+```json
+{
+  "status": "success",
+  "avg_link_usage": 0.12
+}
+```
 
-  * **Query Parameters**:
+#### Error
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "internal server error"
+}
+```
 
-| Parameter | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `state` | `string` | Yes | The desired logging state. Must be one of: `"enable"` or `"disable"`. |
+## 34. POST /ndt/get_total_input_traffic_load_passing_a_switch
+### Description
+Returns the total incoming traffic load (bps) for a given switch.
+It sums link_bandwidth_usage_bps for all edges whose destination DPID equals the provided dpid
+(i.e., all incoming directed links to that switch).
 
-  * **Example URLs**:
-      * **To Enable Logging**:
-        `/ndt/historical_logging?state=enable`
-      * **To Disable Logging**:
-        `/ndt/historical_logging?state=disable`
-
------
+### Request
+* Method: **POST**
+* Content-Type: **application/json**
+* Body
+```json
+{
+  "dpid": 106225808380928
+}
+```
 
 ### Response
+#### Success
+* Status: **200 OK**
+```json
+{
+  "status": "success",
+  "total_input_traffic_load_bps": 12345678
+}
+```
 
-#### Success ✅
+#### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
-  * **Status**: `200 OK`
-  * **Body**
-    ```json
-    {
-      "status": "success",
-      "message": "Historical data logging has been enabled."
-    }
-    ```
-    or
-    ```json
-    {
-      "status": "success",
-      "message": "Historical data logging has been disabled."
-    }
-    ```
+## 35. POST /ndt/get_num_of_flows_passing_a_switch
+### Description
+Returns the number of flows passing a switch, computed by summing flowSet.size() over all
+edges whose destination DPID equals the provided dpid (i.e., incoming links to that switch).
 
-#### Error ❌
+Note: This is an aggregate count across edges; if the same flow appears on multiple incoming
+edges it will be counted multiple times (no global deduplication).
 
-  * **Status**: `400 Bad Request`
-    ```json
-    {
-      "error": "Invalid or missing 'state' parameter. Use 'enable' or 'disable'."
-    }
-    ```
-  * **Status**: `500 Internal Server Error`
-    ```json
-    {
-      "status": "error",
-      "message": "Historical data manager not available."
-    }
-    ```
+### Request
+* Method: **POST**
+* Content-Type: **application/json**
+* Body
+```json
+{
+  "dpid": 106225808380928
+}
+```
+
+### Response
+#### Success
+* Status: **200 OK**
+```json
+{
+  "status": "success",
+  "num_of_flows": 42
+}
+```
+
+#### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
+
+## 36. POST /ndt/acquire_lock
+### Description
+Acquires a global lock (typed lock) to prevent application conflicts (mutual exclusion).
+Supports optional type and ttl (seconds). If the JSON body is missing/invalid, defaults are used.
+
+* type: lock category/name (string)
+* ttl: lock time-to-live in seconds (integer)
+
+### Request
+* Method: **POST**
+* Content-Type: **application/json**
+* Body
+```json
+{
+  "type": "routing_lock",
+  "ttl": 30
+}
+```
+
+### Response
+#### Success
+* Status: **200 OK**
+```json
+{
+  "status": "locked",
+  "type": "routing_lock",
+  "ttl": 30
+}
+```
+
+#### Error
+Busy / Invalid Type
+* **Status: 423 Locked**
+```json
+{
+  "error": "Lock acquisition failed",
+  "detail": "System busy or invalid lock type: routing_lock"
+}
+```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
+
+## 37. POST /ndt/renew_lock
+### Description
+Renews (extends) the TTL of an existing lock to keep exclusive access.
+Supports optional type and ttl. If missing/invalid JSON, defaults are used.
+
+### Request
+* Method: **POST**
+* Content-Type: **application/json**
+* Body (optional)
+```json
+{
+  "type": "routing_lock",
+  "ttl": 30
+}
+```
+
+### Response
+#### Success
+* Status: **200 OK**
+```json
+{
+  "status": "renewed",
+  "type": "routing_lock",
+  "ttl": 30
+}
+```
+
+#### Error
+Not Held / Expired / Invalid
+* **Status: 412 Precondition Failed**
+```json
+{
+  "error": "Renew failed",
+  "detail": "Lock 'routing_lock' is expired, not held, or invalid type"
+}
+```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
+
+## 38. POST /ndt/release_lock
+### Description
+Releases a previously acquired lock, allowing other applications to proceed.
+Supports optional type. If missing/invalid JSON, the default lock type is used.
+
+### Request
+* Method: **POST**
+* Content-Type: **application/json**
+* Body (optional)
+```json
+{
+  "type": "routing_lock"
+}
+```
+
+### Response
+#### Success
+* Status: **200 OK**
+```json
+{
+  "status": "released",
+  "type": "routing_lock"
+}
+```
+
+#### Error
+Busy / Invalid Type
+* **Status: 423 Locked**
+```json
+{
+  "error": "Lock acquisition failed",
+  "detail": "System busy or invalid lock type: routing_lock"
+}
+```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* **Status: 400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* **Status: 500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
+
+
+
+

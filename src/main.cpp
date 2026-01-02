@@ -17,11 +17,12 @@
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
- *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica>
  *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
  *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
  *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
+#include "../setting/AppConfig.hpp"
 #include "common_types/GraphTypes.hpp"
 #include "event_system/EventBus.hpp"
 #include "ndt_core/application_management/ApplicationManager.hpp"
@@ -31,10 +32,10 @@
 #include "ndt_core/data_management/HistoricalDataManager.hpp"
 #include "ndt_core/event_handling/ControllerAndOtherEventHandler.hpp"
 #include "ndt_core/intent_translator/IntentTranslator.hpp"
-#include "ndt_core/power_management/DeviceConfigurationAndPowerManager.hpp"
-#include "ndt_core/routing_management/FlowRoutingManager.hpp"
-#include "ndt_core/routing_management/Controller.hpp"
 #include "ndt_core/lock_management/LockManager.hpp"
+#include "ndt_core/power_management/DeviceConfigurationAndPowerManager.hpp"
+#include "ndt_core/routing_management/Controller.hpp"
+#include "ndt_core/routing_management/FlowRoutingManager.hpp"
 #include "spdlog/spdlog.h"
 #include "utils/Logger.hpp"
 #include <atomic>
@@ -48,10 +49,7 @@
 #include <shared_mutex>
 #include <string>
 #include <thread>
-#include "utils/AppConfig.hpp"
 
-// TODO[OPTIMIZATION]: Third-party api url
-std::string thirdPartyUrlForRouting = "http://localhost:5000/fair_share_path";
 std::string SIM_SERVER_URL = AppConfig::SIM_SERVER_URL;
 std::string GW_IP = AppConfig::GW_IP;
 
@@ -62,7 +60,6 @@ handleSigint(int)
 {
     gShutdownRequested.store(true);
 }
-
 
 int
 promptDeploymentMode()
@@ -122,7 +119,6 @@ main(int argc, char* argv[])
         std::cout << "Running in Remote Testbed environment.\n";
     }
 
-
     auto cfg = Logger::parse_cli_args(argc, argv);
     Logger::init(cfg);
     SPDLOG_LOGGER_INFO(Logger::instance(), "Logger Loads Successfully! level");
@@ -152,10 +148,8 @@ main(int argc, char* argv[])
 
     auto dataManager = std::make_unique<HistoricalDataManager>(topologyAndFlowMonitor, mode);
 
-    flowRoutingManager = std::make_shared<FlowRoutingManager>(thirdPartyUrlForRouting,
-                                                              topologyAndFlowMonitor,
-                                                              collector,
-                                                              eventBus);
+    flowRoutingManager =
+        std::make_shared<FlowRoutingManager>(topologyAndFlowMonitor, collector, eventBus);
 
     std::string openaiModel = promptOpenAIModel();
     auto intentTranslator = std::make_shared<IntentTranslator>(deviceConfigurationAndPowerManager,
