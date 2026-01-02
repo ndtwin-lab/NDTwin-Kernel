@@ -1170,7 +1170,7 @@ DeviceConfigurationAndPowerManager::fetchSmartPlugInfoFromFile(const std::string
     }
 }
 
-json
+nlohmann::json
 DeviceConfigurationAndPowerManager::getSingleSwitchPowerReport(const std::string& deviceIdentifier)
 {
     // Prepare RNG for MININET
@@ -1180,7 +1180,6 @@ DeviceConfigurationAndPowerManager::getSingleSwitchPowerReport(const std::string
     auto graph = m_topologyAndFlowMonitor->getGraph();
 
     // Helper lambda to calculate power for a single switch's properties.
-    // This avoids duplicating the power calculation logic.
     auto calculate_power_for_switch = [&](const auto& props,
                                           const std::string& ip_str) -> uint64_t {
         uint64_t power_mW = 0;
@@ -1194,9 +1193,9 @@ DeviceConfigurationAndPowerManager::getSingleSwitchPowerReport(const std::string
             const std::string username = "admin";
             SPDLOG_INFO("Getting power report from DPID {} at IP {}", props.dpid, ip_str);
 
-            // hpe switch
-            if (ip_str == "10.10.10.16" || ip_str == "10.10.10.17")
+            if (props.brandName == "HPE5520")
             {
+                // HPE switch (SNMP)
                 auto cmd =
                     fmt::format("snmpwalk -v2c -c public {} 1.3.6.1.4.1.25506.8.35.9.1.1.1.6",
                                 ip_str);
@@ -1210,10 +1209,10 @@ DeviceConfigurationAndPowerManager::getSingleSwitchPowerReport(const std::string
                 }
                 SPDLOG_DEBUG("Get HPE switch power ip{} power{}", ip_str, power_mW);
             }
-            // brocade
             else
             {
-                // TODO: Change to SNMP
+                // Brocade / Others (Currently via SSH)
+                // TODO: Change to SNMP if OID is known
                 std::string raw = getPowerReportViaSsh(ip_str, username);
                 power_mW = parsePowerOutput(raw);
                 if (power_mW == 0 && !raw.empty())
@@ -1241,7 +1240,9 @@ DeviceConfigurationAndPowerManager::getSingleSwitchPowerReport(const std::string
     {
         const auto& props = graph[*foundVertex];
         std::string ip_str = utils::ipToString(props.ip.front());
+        
         uint64_t power_mW = calculate_power_for_switch(props, ip_str);
+        
         return {{"dpid", props.dpid}, {"power_consumed", power_mW}};
     }
 

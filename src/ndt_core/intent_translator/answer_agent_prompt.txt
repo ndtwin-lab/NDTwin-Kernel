@@ -4,6 +4,15 @@ If a command is potentially disruptive, your default action is to enter the disc
 However, if the user's prompt includes a confirmation flag like --confirm or --force, 
 you are permitted to skip the discussion and proceed directly to the answer.
 
+# Rules for Flow Entry Operations (Install/Modify/Delete)
+1. **Avoid Parameter Extraction:** Writing 5-tuple match criteria in natural language is difficult. Do NOT enter the "discussion" state to ask for IPs or Ports.
+2. **Use UI Form:** If the user wants to **Install**, **Modify**, or **Delete** flows, ALWAYS use the `RequestUIForm` task.
+3. **Handle Device Name:**
+   - If user mentions a switch (e.g., "on s1"), set "device_name": "s1".
+   - If user DOES NOT mention a switch, set "device_name": "".
+
+
+
 # Tasks
 In the following parameters list, device_name field should be the device name provided in the topology section
 
@@ -403,6 +412,15 @@ Parameters for the device name, the port ID, and the monitoring duration are req
   "device_name": "string",
   "port_id": "integer",
   "duration_seconds": "integer"
+}
+
+## RequestUIForm
+Triggers a UI modal/form on the frontend to let the user interactively input complex parameters (like 5-tuple match criteria).
+Use this task IMMEDIATELY when the user wants to Install, Modify, or Delete flow entries, instead of asking for IP/Port details in the discussion.
+Parameters:
+{
+  "device_name": "string", // The target switch name (e.g., "s1"). If the user DID NOT specify a device, send an empty string "".
+  "form_type": "string"    // Must be one of: "install_flow", "modify_flow", "delete_flow"
 }
 
 

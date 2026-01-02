@@ -929,6 +929,17 @@ IntentTranslator::performTask(llmResponse::Task* task)
         {
             break;
         }
+        case llmResponse::TaskType::REQUEST_UI_FORM:
+        {
+            auto* uiTask = dynamic_cast<llmResponse::RequestUIFormTask*>(task);
+            if (!uiTask) return "{\"error\": \"Task cast failed\"}";
+            
+            SPDLOG_LOGGER_INFO(Logger::instance(), 
+                "LLM requested UI form: {} for device {}", 
+                uiTask->formType, uiTask->deviceName);
+
+            return "{\"status\": \"ui_triggered\", \"form\": \"" + uiTask->formType + "\"}";
+        }
         default:
             throw std::runtime_error(std::string("Unknown task type: ") + llmResponse::taskTypeToString(task->type));
     }

@@ -131,6 +131,8 @@ enum TaskType
     UPDATE_DEVICE_FIRMWARE,
     GET_DEVICE_HEALTH,
     MONITOR_REAL_TIME_TRAFFIC,
+
+    REQUEST_UI_FORM,
 };
 
 inline constexpr const char*
@@ -242,6 +244,8 @@ taskTypeToString(TaskType t)
         return "GetDeviceHealth";
     case MONITOR_REAL_TIME_TRAFFIC:
         return "MonitorRealTimeTraffic";
+    case REQUEST_UI_FORM: 
+        return "RequestUIForm";
 
 
     default:
@@ -454,6 +458,9 @@ taskTypeFromString(std::string s)
     {
         return MONITOR_REAL_TIME_TRAFFIC;
     }
+    if (s == "RequestUIForm"){
+        return REQUEST_UI_FORM;
+    } 
 
     // TODO: switch this to error log
     throw std::runtime_error("unknown task type: " + std::string{s});
@@ -1951,6 +1958,37 @@ from_json(const nlohmann::json& j, MonitorRealTimeTrafficTask& task)
     task_from_json(j, task);
 }
 
+//========================== REQUEST_UI_FORM ==========================
+class RequestUIFormTask : public Task
+{
+  public:
+    RequestUIFormTask()
+    {
+        type = REQUEST_UI_FORM;
+    }
+    std::string deviceName;
+    std::string formType; // e.g., "install_flow", "delete_flow", "modify_flow"
+};
+
+inline void
+to_json(nlohmann::json& j, const RequestUIFormTask& task)
+{
+    j = nlohmann::json{
+        {"parameters",
+         {{"device_name", task.deviceName},
+          {"form_type", task.formType}}}};
+    task_to_json(j, task);
+}
+
+inline void
+from_json(const nlohmann::json& j, RequestUIFormTask& task)
+{
+
+    task.deviceName = j.at("parameters").value("device_name", ""); 
+    task.formType = j.at("parameters").at("form_type").get<std::string>();
+    task_from_json(j, task);
+}
+
 // ====================== serilalizer and deserializer for Task ======================
 
 inline void
@@ -2115,6 +2153,9 @@ to_json(nlohmann::json& j, const std::unique_ptr<Task>& p)
         break;
     case MONITOR_REAL_TIME_TRAFFIC:
         j = static_cast<const MonitorRealTimeTrafficTask&>(*p);
+        break;
+    case REQUEST_UI_FORM:
+        j = static_cast<const RequestUIFormTask&>(*p);
         break;
     }
 }
@@ -2287,6 +2328,9 @@ from_json(const json& j, std::unique_ptr<Task>& p)
         break;
     case MONITOR_REAL_TIME_TRAFFIC:
         p = make_from_json<MonitorRealTimeTrafficTask>(j);
+        break;
+    case REQUEST_UI_FORM:
+        p = make_from_json<RequestUIFormTask>(j);
         break;
     default:
         throw std::runtime_error("unknown Task type");
