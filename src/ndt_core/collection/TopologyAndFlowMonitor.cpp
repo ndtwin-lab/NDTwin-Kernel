@@ -1290,74 +1290,6 @@ TopologyAndFlowMonitor::getEdgeFlowSetNoLock(Graph::edge_descriptor e) const
     return out;
 }
 
-/// @brief Deprecated
-/// @param e
-/// @return 0
-int
-TopologyAndFlowMonitor::getEdgeElephantFlowCount(Graph::edge_descriptor e) const
-{
-    int count = 0;
-    // const auto& edgeProps = (*m_graph)[e];
-
-    // for (const auto& flowKey : edgeProps.flowSet)
-    // {
-    //     auto it = m_flowInfoTable.find(flowKey);
-    //     if (it != m_flowInfoTable.end())
-    //     {
-    //         const sflow::FlowInfo& flowInfo = it->second;
-    //         if (flowInfo.isElephantFlowPeriodically)
-    //         {
-    //             ++count;
-    //         }
-    //     }
-    // }
-
-    return count;
-}
-
-// void
-// TopologyAndFlowMonitor::setEdgeFlow(Graph::edge_descriptor e, sflow::FlowKey key, bool isAlive)
-// {
-//     std::unique_lock lock(*m_graphMutex);
-//     if (isAlive)
-//     {
-//         // insert
-//         (*m_graph)[e].flowSet.insert(key);
-//     }
-//     else
-//     {
-//         // erase
-//         (*m_graph)[e].flowSet.erase(key);
-//     }
-//     SPDLOG_LOGGER_TRACE(Logger::instance(),
-//                         "set edge {} to {} flow key: {} -> {} {}",
-//                         (*m_graph)[e].srcDpid,
-//                         (*m_graph)[e].dstDpid,
-//                         utils::ipToString(key.srcIP),
-//                         utils::ipToString(key.dstIP),
-//                         isAlive);
-// }
-
-// void
-// TopologyAndFlowMonitor::setEdgeFlowNoLock(Graph::edge_descriptor e,
-//                                           sflow::FlowKey key,
-//                                           bool isAlive)
-// {
-//     if (isAlive)
-//     { // insert
-//         (*m_graph)[e].flowSet.insert(key);
-//     }
-//     else
-//     { // erase
-//         (*m_graph)[e].flowSet.erase(key);
-//     }
-
-//     SPDLOG_LOGGER_TRACE(Logger::instance(),
-//                         "set edge flow key: {} -> {}",
-//                         utils::ipToString(key.srcIP),
-//                         utils::ipToString(key.dstIP));
-// }
-
 Graph
 TopologyAndFlowMonitor::getGraph() const
 {
@@ -1449,11 +1381,6 @@ TopologyAndFlowMonitor::setVertexDeviceName(Graph::vertex_descriptor v, std::str
     }
 }
 
-/**
- * @brief Sets the nickname for a given vertex and saves the change to the topology file.
- * @param v The vertex descriptor of the device to modify.
- * @param nickname The new nickname string.
- */
 void
 TopologyAndFlowMonitor::setVertexNickname(Graph::vertex_descriptor v, std::string nickname)
 {
@@ -1908,7 +1835,7 @@ TopologyAndFlowMonitor::bfsAllPathsToDst(
             }
         }
 
-        // neighbor discovery unchanged...
+        // neighbor discovery
         std::vector<Graph::vertex_descriptor> neighbors;
         for (auto edge : boost::make_iterator_range(boost::out_edges(current, g)))
         {

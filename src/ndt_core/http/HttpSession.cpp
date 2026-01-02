@@ -149,11 +149,7 @@ HttpSession::handleRequest()
         }
 
         // --- API ROUTING ---
-        if (method == http::verb::post && target == "/ndt/flow_added")
-        {
-            handleFlowAdded(*response);
-        }
-        else if (method == http::verb::post && target == "/ndt/link_failure_detected")
+        if (method == http::verb::post && target == "/ndt/link_failure_detected")
         {
             handleLinkFailure(*response);
         }
@@ -176,14 +172,6 @@ HttpSession::handleRequest()
         else if (method == http::verb::get && target == "/ndt/get_power_report")
         {
             handleGetPowerReport(*response);
-        }
-        else if (method == http::verb::post && target == "/ndt/disable_switch")
-        {
-            handleDisableSwitch(*response);
-        }
-        else if (method == http::verb::post && target == "/ndt/enable_switch")
-        {
-            handleEnableSwitch(*response);
         }
         else if (method == http::verb::get && target.starts_with("/ndt/get_switches_power_state"))
         {
@@ -409,52 +397,6 @@ HttpSession::closeSocket()
     m_socket.shutdown(tcp::socket::shutdown_send, ec);
 }
 
-// --- Individual Request Handlers Implementation ---
-
-void
-HttpSession::handleFlowAdded(http::response<http::string_body>& res)
-{
-    SPDLOG_LOGGER_INFO(Logger::instance(), "Handle Flow Added");
-    auto parsed = parseFlowAddedEventPayload(m_req.body());
-    if (!parsed.has_value())
-    {
-        res.result(http::status::bad_request);
-        res.body() = json{{"error", "Invalid PacketInPayload format"}}.dump();
-        return;
-    }
-
-    std::optional<sflow::Path> selected;
-    FlowAddedEventData eventData{parsed.value(),
-                                 [&](std::optional<sflow::Path> result) { selected = result; }};
-    m_eventBus->emit(Event{.type = EventType::FlowAdded, .payload = eventData});
-    SPDLOG_LOGGER_INFO(Logger::instance(), "Emitted FlowAdded event.");
-
-    if (!selected.has_value())
-    {
-        res.body() = R"({"status": "flow already installed"})";
-    }
-    else
-    {
-        const sflow::Path& path = selected.value();
-        std::vector<std::vector<std::string>> result;
-        for (size_t i = 0; i < path.size(); ++i)
-        {
-            const auto& node = path[i];
-            std::vector<std::string> entry;
-            if (i == 0 || i == path.size() - 1)
-            {
-                entry.push_back(utils::ipToString(node.first));
-            }
-            else
-            {
-                entry.push_back(std::to_string(node.first));
-            }
-            entry.push_back(std::to_string(node.second));
-            result.push_back(entry);
-        }
-        res.body() = json{{"status", "path selected"}, {"path", result}}.dump();
-    }
-}
 
 void
 HttpSession::handleLinkFailure(http::response<http::string_body>& res)
@@ -469,7 +411,7 @@ HttpSession::handleLinkFailure(http::response<http::string_body>& res)
     }
 
     SPDLOG_LOGGER_INFO(Logger::instance(),
-                       "link failed on {}:{} → {}:{}",
+                       "link failed on {}:{} -> {}:{}",
                        data->srcDpid,
                        data->srcInterface,
                        data->dstDpid,
@@ -607,152 +549,6 @@ HttpSession::handleGetPowerReport(http::response<http::string_body>& res)
 {
     SPDLOG_LOGGER_INFO(Logger::instance(), "Handle Get Power Report");
     res.body() = m_deviceConfigurationAndPowerManager->getPowerReport().dump();
-}
-
-void
-HttpSession::handleDisableSwitch(http::response<http::string_body>& res)
-{
-    SPDLOG_LOGGER_INFO(Logger::instance(), "Handle Disable Switch");
-    // Implementation is complex, copied from original
-    auto jsonData = json::parse(m_req.body());
-
-    std::vector<uint64_t> targetDpids;
-    if (jsonData.contains("dpid"))
-    {
-        // single dpid, same as now
-        targetDpids = {jsonData["dpid"].get<uint64_t>()};
-    }
-    else if (jsonData.contains("dpids"))
-    {
-        // array of dpids
-        for (auto& dpidVal : jsonData["dpids"])
-        {
-            targetDpids.push_back(dpidVal.get<uint64_t>());
-        }
-    }
-    else
-    {
-        res.result(http::status::bad_request);
-        res.body() = R"({"error":"Missing dpid or dpids"})";
-        return;
-    }
-
-    auto oldOpenflowTables = m_deviceConfigurationAndPowerManager->getOpenFlowTable();
-
-    for (auto dpid : targetDpids)
-    {
-        auto switchVertexOpt = m_topologyAndFlowMonitor->findSwitchByDpid(dpid);
-        if (!switchVertexOpt)
-        {
-            SPDLOG_LOGGER_WARN(Logger::instance(), "Switch {} not found", dpid);
-            continue; // or decide to return 404 early
-        }
-
-        m_topologyAndFlowMonitor->disableSwitchAndEdges(dpid);
-    }
-
-    auto graph = m_topologyAndFlowMonitor->getGraph();
-
-    std::map<std::pair<uint32_t, uint32_t>, sflow::Path> oldAllPaths =
-        m_flowLinkUsageCollector->getAllPaths();
-    std::vector<uint32_t> hostIpList = m_flowLinkUsageCollector->getAllHostIps();
-    std::map<std::pair<uint32_t, uint32_t>, sflow::Path> newAllPaths;
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
-        newOpenflowTables;
-
-    for (const auto& dstIp : hostIpList)
-    {
-        auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByHostIp(dstIp);
-        Graph::vertex_descriptor dstSwitch;
-        if (edgeOpt)
-        {
-            dstSwitch = boost::target(edgeOpt.value(), graph);
-        }
-        else
-        {
-            SPDLOG_LOGGER_WARN(Logger::instance(),
-                               "No switch found for dstIp {}",
-                               utils::ipToString(dstIp));
-            continue;
-        }
-
-        std::vector<sflow::Path> pathsToDst =
-            m_topologyAndFlowMonitor->bfsAllPathsToDst(graph,
-                                                       dstSwitch,
-                                                       dstIp,
-                                                       hostIpList,
-                                                       newOpenflowTables);
-        for (const auto& path : pathsToDst)
-        {
-            if (path.empty())
-            {
-                continue;
-            }
-            uint32_t srcIp = path.front().first;
-            newAllPaths[{srcIp, dstIp}] = path;
-        }
-    }
-
-    auto diffs = sflow::getFlowTableDiff(oldOpenflowTables, newOpenflowTables);
-
-    auto fmtMatch = [](uint32_t net, uint32_t mask) {
-        return utils::ipToString(net) + "/" + utils::ipToString(mask);
-    };
-
-    json responseJson = json::array();
-    for (const auto& diff : diffs)
-    {
-        json j;
-        j["dpid"] = diff.dpid;
-
-        for (const auto& change : diff.added)
-        {
-            j["added"].push_back({{"nw_dst", fmtMatch(change.dstNet, change.dstMask)},
-                                  {"priority", change.priority},
-                                  {"new_output_interface", change.newOutInterface}});
-        }
-
-        for (const auto& change : diff.removed)
-        {
-            j["removed"].push_back({{"nw_dst", fmtMatch(change.dstNet, change.dstMask)},
-                                    {"priority", change.priority},
-                                    {"old_output_interface", change.oldOutInterface}});
-        }
-
-        for (const auto& change : diff.modified)
-        {
-            j["modified"].push_back({{"nw_dst", fmtMatch(change.dstNet, change.dstMask)},
-                                     {"priority", change.priority},
-                                     {"old_output_interface", change.oldOutInterface},
-                                     {"new_output_interface", change.newOutInterface}});
-        }
-
-        responseJson.push_back(j);
-    }
-    res.body() = responseJson.dump();
-}
-
-void
-HttpSession::handleEnableSwitch(http::response<http::string_body>& res)
-{
-    SPDLOG_LOGGER_INFO(Logger::instance(), "Handle Enable Switch");
-    auto jsonData = json::parse(m_req.body());
-    if (!jsonData.contains("dpid"))
-    {
-        res.result(http::status::bad_request);
-        res.body() = R"({"error":"Missing dpid"})";
-        return;
-    }
-    uint64_t targetDpid = jsonData["dpid"].get<uint64_t>();
-    auto switchVertexOpt = m_topologyAndFlowMonitor->findSwitchByDpid(targetDpid);
-    if (!switchVertexOpt)
-    {
-        res.result(http::status::not_found);
-        res.body() = R"({"error":"Switch not found"})";
-        return;
-    }
-    m_topologyAndFlowMonitor->enableSwitchAndEdges(targetDpid);
-    res.body() = R"({"status":"enable switch processed"})";
 }
 
 void
@@ -1645,7 +1441,6 @@ HttpSession::handleGetPathSwitchCount(http::response<http::string_body>& res)
     json responseJson;
     res.set(http::field::content_type, "application/json");
 
-    // === MODIFICATION START ===
 
     // Check if BOTH src_ip and dst_ip were provided for a specific lookup.
     if (!srcIpStr.empty() && !dstIpStr.empty())
@@ -1689,7 +1484,6 @@ HttpSession::handleGetPathSwitchCount(http::response<http::string_body>& res)
 
         json dataArray = json::array();
 
-        // --- CHANGE IS HERE ---
         // The key from the map is an "ipPair", not a "flow" struct.
         for (const auto& [ipPair, count] : allCounts)
         {
@@ -1706,8 +1500,6 @@ HttpSession::handleGetPathSwitchCount(http::response<http::string_body>& res)
         responseJson["data"] = dataArray;
     }
 
-    // === MODIFICATION END ===
-
     res.body() = responseJson.dump();
 }
 
@@ -1715,7 +1507,7 @@ void
 HttpSession::handleGetOpenflowCapacity(http::response<http::string_body>& res)
 {
     SPDLOG_LOGGER_INFO(Logger::instance(), "Handle Get Openflow Capacity");
-    std::ifstream file("../OpenflowCapacity.json");
+    std::ifstream file("../doc/OpenflowCapacity.json");
     if (!file.is_open())
     {
         SPDLOG_LOGGER_ERROR(Logger::instance(), "Cannot open OpenflowCapacity.json");

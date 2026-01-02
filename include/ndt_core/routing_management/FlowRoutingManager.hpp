@@ -69,8 +69,7 @@ class FlowRoutingManager
      * @param collector sFlow collector for flow/path awareness and affected-flow updates.
      * @param eventBus Event bus used to publish routing/flow-change events.
      */
-    FlowRoutingManager(std::string apiUrl,
-                       std::shared_ptr<TopologyAndFlowMonitor> topologyAndFlowMonitor,
+    FlowRoutingManager(std::shared_ptr<TopologyAndFlowMonitor> topologyAndFlowMonitor,
                        std::shared_ptr<sflow::FlowLinkUsageCollector> collector,
                        std::shared_ptr<EventBus> eventBus);
 

@@ -17,7 +17,7 @@
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
- *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica>
  *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
  *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
  *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
@@ -176,10 +176,8 @@ DeviceConfigurationAndPowerManager::queryTestbed(const std::string& ipParam) con
         try
         {
             std::ostringstream cmd;
-            cmd << "curl -k -s -X GET "
-                // wrap in quotes so shell doesn’t split on & ? etc.
-                << "\"http://10.10.10.1:8000/relay" << "?ip=" << si.plugIp << "&resource=outlet"
-                << "&index=" << si.plugIdx << "\"";
+            cmd << "curl -k -s -X GET " << "\"http://" << GW_IP << ":8000/relay"
+                << "?ip=" << si.plugIp << "&resource=outlet" << "&index=" << si.plugIdx << "\"";
 
             std::string raw = utils::execCommand(cmd.str());
 
@@ -395,7 +393,7 @@ DeviceConfigurationAndPowerManager::setSwitchPowerState(std::string ip,
 {
     try
     {
-        // 1) Build curl POST command
+        // 1. Build curl POST command
         //    -s           : silent
         //    -X POST      : HTTP POST
         //    -H "Host: …"
@@ -404,13 +402,13 @@ DeviceConfigurationAndPowerManager::setSwitchPowerState(std::string ip,
         cmd << "curl -s -X POST " << "-H \"Host: 127.0.0.1\" "
             << "-H \"User-Agent: Beast-C++-Client\" "
             // Quote full URL so shell expands safely
-            << "\"http://10.10.10.1:8000/relay?ip=" << si.plugIp << "&index=" << si.plugIdx
+            << "\"http://" << GW_IP << ":8000/relay?ip=" << si.plugIp << "&index=" << si.plugIdx
             << "&method=" << action << "\"";
 
-        // 2) Execute and grab raw HTML response
+        // 2. Execute and grab raw HTML response
         std::string raw = utils::execCommand(cmd.str());
 
-        // 3) Extract status text between the 2nd '>' and next '<'
+        // 3. Extract status text between the 2nd '>' and next '<'
         std::string status = raw;
         if (auto p1 = raw.find('>'); p1 != std::string::npos)
         {
@@ -423,7 +421,7 @@ DeviceConfigurationAndPowerManager::setSwitchPowerState(std::string ip,
             }
         }
 
-        // 4) Update the topology graph vertex accordingly
+        // 4. Update the topology graph vertex accordingly
         auto ip_uint = utils::ipStringToUint32(ip);
         if (auto node_opt = m_topologyAndFlowMonitor->findSwitchByIp(ip_uint))
         {
