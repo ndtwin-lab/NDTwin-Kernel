@@ -1250,20 +1250,6 @@ TopologyAndFlowMonitor::getEdgeStatsNoLock(Graph::edge_descriptor e) const
             edgeProps.flowSet.size()};
 }
 
-// set<sflow::FlowKey>
-// TopologyAndFlowMonitor::getEdgeFlowSet(Graph::edge_descriptor e) const
-// {
-//     std::shared_lock lock(*m_graphMutex);
-//     const auto& edgeProps = (*m_graph)[e];
-//     return edgeProps.flowSet;
-// }
-
-// set<sflow::FlowKey>
-// TopologyAndFlowMonitor::getEdgeFlowSetNoLock(Graph::edge_descriptor e) const
-// {
-//     const auto& edgeProps = (*m_graph)[e];
-//     return edgeProps.flowSet;
-// }
 
 std::set<sflow::FlowKey>
 TopologyAndFlowMonitor::getEdgeFlowSet(Graph::edge_descriptor e) const
@@ -1489,7 +1475,7 @@ TopologyAndFlowMonitor::getAllPathsBetweenTwoHosts(sflow::FlowKey flow_key,
     vector<sflow::Path> paths;
     shared_lock lock(*m_graphMutex);
 
-    // 1) Locate source and destination switch vertices
+    // 1. Locate source and destination switch vertices
     Graph::vertex_descriptor src_v, dst_v;
 
     auto srcVertexOpt = findSwitchByDpidNoLock(src_sw_dpid);
@@ -1504,14 +1490,14 @@ TopologyAndFlowMonitor::getAllPathsBetweenTwoHosts(sflow::FlowKey flow_key,
     src_v = *srcVertexOpt;
     dst_v = *dstVertexOpt;
 
-    // 2) Prepare for DFS
+    // 2. Prepare for DFS
     unordered_set<Graph::vertex_descriptor> visited;
     visited.reserve(boost::num_vertices(*m_graph));
 
     sflow::Path current_path;
     current_path.push_back({flow_key.srcIP, 0U});
 
-    // 3) Recursive DFS lambda
+    // 3. Recursive DFS lambda
     function<void(Graph::vertex_descriptor)> dfs = [&](Graph::vertex_descriptor u) {
         if (u == dst_v)
         {
@@ -1549,7 +1535,7 @@ TopologyAndFlowMonitor::getAllPathsBetweenTwoHosts(sflow::FlowKey flow_key,
         visited.erase(u);
     };
 
-    // 4) Kick off the search
+    // 4. Kick off the search
     SPDLOG_LOGGER_INFO(Logger::instance(), "DFS Start");
     dfs(src_v);
 

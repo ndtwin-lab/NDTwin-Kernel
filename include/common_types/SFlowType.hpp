@@ -48,8 +48,8 @@ namespace sflow
  */
 struct FlowKey
 {
-    uint32_t srcIP;
-    uint32_t dstIP;
+    uint32_t srcIP; // in network order
+    uint32_t dstIP; // in network order
     uint16_t srcPort;
     uint16_t dstPort;
     uint8_t protocol = 0;
@@ -232,6 +232,7 @@ struct FlowInfo
     bool isElephantFlowImmediately = false;
     bool isAck = false;
     bool isPureAck = false;
+    Path flowPath;
 };
 
 template <typename T>

@@ -17,7 +17,7 @@
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
- *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica>
  *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
  *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
  *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
@@ -67,14 +67,15 @@ FlowRoutingManager::deleteAnEntry(uint64_t dpid, json match, int priority)
 
     if (priority == -1)
     {
-        cmd << "curl -s -X POST http://127.0.0.1:8080/stats/flowentry/delete "
+        cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/flowentry/delete "
             << "-H \"Content-Type: application/json\" " << "-d '" << jsonData.dump() << "'";
     }
     else
     {
         jsonData["priority"] = priority;
-        cmd << "curl -s -X POST http://127.0.0.1:8080/stats/flowentry/delete_strict "
-            << "-H \"Content-Type: application/json\" " << "-d '" << jsonData.dump() << "'";
+        cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT
+            << "/stats/flowentry/delete_strict " << "-H \"Content-Type: application/json\" "
+            << "-d '" << jsonData.dump() << "'";
     }
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
@@ -99,7 +100,7 @@ FlowRoutingManager::installAnEntry(uint64_t dpid,
     }
 
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/flowentry/add "
+    cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/flowentry/add "
         << "-H \"Content-Type: application/json\" " << "-d '" << jsonData.dump() << "'";
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
@@ -116,7 +117,7 @@ FlowRoutingManager::modifyAnEntry(uint64_t dpid, int priority, json match, json 
     jsonData["actions"] = action;
 
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/flowentry/modify "
+    cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/flowentry/modify "
         << "-H \"Content-Type: application/json\" " << "-d '" << jsonData.dump() << "'";
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
@@ -127,7 +128,7 @@ void
 FlowRoutingManager::installAGroupEntry(json j)
 {
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/groupentry/add "
+    cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/groupentry/add "
         << "-H \"Content-Type: application/json\" " << "-d '" << j.dump() << "'";
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
@@ -138,7 +139,7 @@ void
 FlowRoutingManager::deleteAGroupEntry(json j)
 {
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/groupentry/delete "
+    cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/groupentry/delete "
         << "-H \"Content-Type: application/json\" " << "-d '" << j.dump() << "'";
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
@@ -149,7 +150,7 @@ void
 FlowRoutingManager::modifyAGroupEntry(json j)
 {
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/groupentry/modify "
+    cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/groupentry/modify "
         << "-H \"Content-Type: application/json\" " << "-d '" << j.dump() << "'";
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
@@ -160,7 +161,7 @@ void
 FlowRoutingManager::installAMeterEntry(json j)
 {
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/meterentry/add "
+    cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/meterentry/add "
         << "-H \"Content-Type: application/json\" " << "-d '" << j.dump() << "'";
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
@@ -171,7 +172,7 @@ void
 FlowRoutingManager::deleteAMeterEntry(json j)
 {
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/meterentry/delete "
+    cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/meterentry/delete "
         << "-H \"Content-Type: application/json\" " << "-d '" << j.dump() << "'";
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());
@@ -182,7 +183,7 @@ void
 FlowRoutingManager::modifyAMeterEntry(json j)
 {
     std::ostringstream cmd;
-    cmd << "curl -s -X POST http://127.0.0.1:8080/stats/meterentry/modify "
+    cmd << "curl -s -X POST http://" << AppConfig::RYU_IP_AND_PORT << "/stats/meterentry/modify "
         << "-H \"Content-Type: application/json\" " << "-d '" << j.dump() << "'";
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "execCommand: {}", cmd.str());

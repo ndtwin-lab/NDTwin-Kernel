@@ -45,9 +45,7 @@
 #include <utility>                     // for pair
 #include <vector>                      // for vector
 
-// We don't need to use constexpr std::string_view
-// Cuz the files are used for ifstream (which needs std::string as the param type)
-// static const std::string TOPOLOGY_FILE = "../StaticNetworkTopology_ipAlias4_10Switches.json";
+
 static const std::string TOPOLOGY_FILE = AppConfig::TOPOLOGY_FILE;
 
 static const std::string TOPOLOGY_FILE_MININET = AppConfig::TOPOLOGY_FILE_MININET;

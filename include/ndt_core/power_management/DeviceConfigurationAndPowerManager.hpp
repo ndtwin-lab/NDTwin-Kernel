@@ -17,7 +17,7 @@
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
- *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica>
  *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
  *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
  *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
@@ -39,6 +39,11 @@
 class TopologyAndFlowMonitor; // lines 34-34
 
 using json = nlohmann::json;
+
+namespace ndtClassifier
+{
+class Classifier;
+}
 
 /**
  * @brief Mapping between a switch management IP and its smart plug control endpoint.
@@ -90,7 +95,8 @@ class DeviceConfigurationAndPowerManager
      */
     DeviceConfigurationAndPowerManager(std::shared_ptr<TopologyAndFlowMonitor> topoMonitor,
                                        int mode,
-                                       std::string gwUrl);
+                                       std::string gwUrl,
+                                       std::shared_ptr<ndtClassifier::Classifier> classifier);
 
     /**
      * @brief Query power state for one or more switches.
@@ -254,4 +260,6 @@ class DeviceConfigurationAndPowerManager
     json m_cachedOpenFlowTables;
 
     std::string GW_IP;
+
+    std::shared_ptr<ndtClassifier::Classifier> m_classifier;
 };

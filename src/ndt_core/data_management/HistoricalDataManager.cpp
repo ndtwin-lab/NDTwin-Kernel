@@ -87,10 +87,10 @@ HistoricalDataManager::run()
 
     while (m_running.load())
     {
-        // 1) Fetch a snapshot clone of the graph
+        // 1. Fetch a snapshot clone of the graph
         Graph graph = m_topologyAndFlowMonitor->getGraph();
 
-        // 2) Build timestamp strings
+        // 2. Build timestamp strings
         auto now = std::chrono::system_clock::now();
         std::time_t t = std::chrono::system_clock::to_time_t(now);
         std::tm local_tm = *std::localtime(&t);
@@ -101,7 +101,7 @@ HistoricalDataManager::run()
         char dateTimeBuf[20]; // YYYY-MM-DD HH:MM:SS
         std::strftime(dateTimeBuf, sizeof(dateTimeBuf), "%Y-%m-%d %H:%M:%S", &local_tm);
 
-        // 3) Iterate each edge and append to per-link CSV under outDir
+        // 3. Iterate each edge and append to per-link CSV under outDir
         auto [ei, ei_end] = boost::edges(graph);
         int edgeCnt = 0;
         for (; ei != ei_end; ++ei)

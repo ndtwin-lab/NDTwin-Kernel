@@ -41,8 +41,8 @@ class ApplicationManager;
  * ApplicationManager.
  *
  * Typical flow:
- *  1) requestSimulation(body): send a run request to SIM_SERVER_URL for an app/case
- *  2) onSimulationResult(appId, body): invoked by the network layer upon completion
+ *  1. requestSimulation(body): send a run request to SIM_SERVER_URL for an app/case
+ *  2. onSimulationResult(appId, body): invoked by the network layer upon completion
  *     - looks up the application's "simulation completed" callback via ApplicationManager
  *     - forwards the result payload to that callback (implementation-dependent)
  *

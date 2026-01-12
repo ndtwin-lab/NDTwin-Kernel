@@ -24,7 +24,8 @@
  */
 
 #include "ndt_core/power_management/DeviceConfigurationAndPowerManager.hpp"
-#include "common_types/GraphTypes.hpp"                    // for VertexProp...
+#include "common_types/GraphTypes.hpp" // for VertexProp...
+#include "ndt_core/collection/Classifier.hpp"
 #include "ndt_core/collection/TopologyAndFlowMonitor.hpp" // for TopologyAn...
 #include "nlohmann/json.hpp"                              // for basic_json
 #include "spdlog/spdlog-inl.h"                            // for default_lo...
@@ -61,14 +62,16 @@ using json = nlohmann::json;
 DeviceConfigurationAndPowerManager::DeviceConfigurationAndPowerManager(
     shared_ptr<TopologyAndFlowMonitor> topoMonitor,
     int mode,
-    std::string gwUrl)
+    std::string gwUrl,
+    shared_ptr<ndtClassifier::Classifier> classifier)
     : m_topologyAndFlowMonitor(std::move(topoMonitor)),
       m_mode(static_cast<utils::DeploymentMode>(mode)),
       m_cachedPowerReport(nlohmann::json::array()),
       m_cachedCpuReport(nlohmann::json::object()),
       m_cachedMemoryReport(nlohmann::json::object()),
       m_cachedTemperatureReport(nlohmann::json::object()),
-      GW_IP(gwUrl)
+      GW_IP(gwUrl),
+      m_classifier(classifier)
 {
 }
 
@@ -151,7 +154,7 @@ DeviceConfigurationAndPowerManager::queryTestbed(const std::string& ipParam) con
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "query testbed {}", ipParam);
 
-    // 1) decide which switches to query
+    // 1. decide which switches to query
     if (ipParam.empty())
     {
         toQuery = switchSmartPlugTable;
@@ -170,7 +173,7 @@ DeviceConfigurationAndPowerManager::queryTestbed(const std::string& ipParam) con
     }
 
     // TODO: Do it parallelly
-    // 2) for each switch, call the Flask /relay proxy with resource=outlet
+    // 2. for each switch, call the Flask /relay proxy with resource=outlet
     for (auto& si : toQuery)
     {
         try
@@ -435,7 +438,7 @@ DeviceConfigurationAndPowerManager::setSwitchPowerState(std::string ip,
             }
 
             SPDLOG_LOGGER_INFO(Logger::instance(),
-                               "set graph attributes for {} → {} (controller returned “{}”)",
+                               "set graph attributes for {} -> {} (controller returned “{}”)",
                                ip,
                                action,
                                status);
@@ -525,15 +528,16 @@ DeviceConfigurationAndPowerManager::fetchOpenFlowTablesInternal()
         }
 
         uint64_t dpid = props.dpid;
-        std::string cmd = fmt::format("curl -s -X GET http://127.0.0.1:8080/stats/flow/{}", dpid);
+        std::string cmd =
+            fmt::format("curl -s -X GET http://{}/stats/flow/{}", AppConfig::RYU_IP_AND_PORT, dpid);
 
         SPDLOG_LOGGER_INFO(spdlog::default_logger(),
-                           "DeviceManager: querying switch {} → `{}`",
+                           "DeviceManager: querying switch {} -> `{}`",
                            dpid,
                            cmd);
 
         std::string raw = utils::execCommand(cmd);
-        SPDLOG_LOGGER_DEBUG(spdlog::default_logger(),
+        SPDLOG_LOGGER_TRACE(spdlog::default_logger(),
                             "DeviceManager: raw response for {}: {}",
                             dpid,
                             raw);
@@ -542,6 +546,9 @@ DeviceConfigurationAndPowerManager::fetchOpenFlowTablesInternal()
         nlohmann::json flows = parseFlowStatsTextToJson(raw);
 
         result.push_back({{"dpid", dpid}, {"flows", flows}});
+
+        // TODO: Test Classifier
+        m_classifier->updateFromQueriedTables(result);
     }
 
     return result;
@@ -568,11 +575,12 @@ DeviceConfigurationAndPowerManager::getOpenFlowTable(uint64_t defaultDpid)
             }
 
             uint64_t dpid = props.dpid;
-            std::string cmd =
-                fmt::format("curl -s -X GET http://127.0.0.1:8080/stats/flow/{}", dpid);
+            std::string cmd = fmt::format("curl -s -X GET http://{}/stats/flow/{}",
+                                          AppConfig::RYU_IP_AND_PORT,
+                                          dpid);
 
             SPDLOG_LOGGER_INFO(spdlog::default_logger(),
-                               "DeviceManager: querying switch {} → `{}`",
+                               "DeviceManager: querying switch {} -> `{}`",
                                dpid,
                                cmd);
 
@@ -591,11 +599,12 @@ DeviceConfigurationAndPowerManager::getOpenFlowTable(uint64_t defaultDpid)
     }
     else
     {
-        std::string cmd =
-            fmt::format("curl -s -X GET http:://127.0.0.1:8080/stats/flow/{}", defaultDpid);
+        std::string cmd = fmt::format("curl -s -X GET http:://{}/stats/flow/{}",
+                                      AppConfig::RYU_IP_AND_PORT,
+                                      defaultDpid);
 
         SPDLOG_LOGGER_INFO(spdlog::default_logger(),
-                           "DeviceManager: querying switch {} → `{}`",
+                           "DeviceManager: querying switch {} -> `{}`",
                            defaultDpid,
                            cmd);
 
@@ -826,8 +835,6 @@ DeviceConfigurationAndPowerManager::fetchPowerReportInternal()
 
             SPDLOG_INFO("Getting power report from DPID {} at IP {}", dpid, ip_str);
 
-            // TODO: Change to SNMP for all devices
-            // TODO: Use brandName instead of IP
             // hpe switch
             if (props.brandName == "HPE5520")
             {
@@ -847,7 +854,6 @@ DeviceConfigurationAndPowerManager::fetchPowerReportInternal()
             // brocade
             else
             {
-                // TODO: Change to SNMP
                 std::string raw = getPowerReportViaSsh(ip_str, username);
                 power_mW = parsePowerOutput(raw);
                 if (power_mW == 0 && !raw.empty())
@@ -900,9 +906,9 @@ bool
 DeviceConfigurationAndPowerManager::setPowerStateTestbed(const SwitchInfo& si,
                                                          const std::string& action)
 {
-    SPDLOG_LOGGER_INFO(Logger::instance(), "TESTBED: setting switch {} → {}", si.switchIp, action);
+    SPDLOG_LOGGER_INFO(Logger::instance(), "TESTBED: setting switch {} -> {}", si.switchIp, action);
 
-    // we’ll always talk to your Flask relay on 10.10.10.1:8000
+    // Tell server (run on gateway port 8000) who relays the api request to smart plug
     // pass:
     //   ip       = the PDU’s IP (plug_ip)
     //   resource = "outlet"   (or "bank"/"device" if you extend SwitchInfo)
@@ -1010,7 +1016,7 @@ DeviceConfigurationAndPowerManager::setPowerStateMininet(uint32_t ipUint, const 
             std::system(("sudo ovs-vsctl del-br " + swName).c_str());
         }
     }
-    SPDLOG_INFO("MININET: switch {} → {}", swName, action);
+    SPDLOG_INFO("MININET: switch {} -> {}", swName, action);
     return true;
 }
 
@@ -1238,9 +1244,9 @@ DeviceConfigurationAndPowerManager::getSingleSwitchPowerReport(const std::string
     {
         const auto& props = graph[*foundVertex];
         std::string ip_str = utils::ipToString(props.ip.front());
-        
+
         uint64_t power_mW = calculate_power_for_switch(props, ip_str);
-        
+
         return {{"dpid", props.dpid}, {"power_consumed", power_mW}};
     }
 

@@ -27,6 +27,7 @@
 #include "event_system/EventBus.hpp"
 #include "ndt_core/application_management/ApplicationManager.hpp"
 #include "ndt_core/application_management/SimulationRequestManager.hpp"
+#include "ndt_core/collection/Classifier.hpp"
 #include "ndt_core/collection/FlowLinkUsageCollector.hpp"
 #include "ndt_core/collection/TopologyAndFlowMonitor.hpp"
 #include "ndt_core/data_management/HistoricalDataManager.hpp"
@@ -132,19 +133,21 @@ main(int argc, char* argv[])
     auto eventBus = std::make_shared<EventBus>();
     std::shared_ptr<FlowRoutingManager> flowRoutingManager;
     std::shared_ptr<DeviceConfigurationAndPowerManager> deviceConfigurationAndPowerManager;
+    auto classifier = std::make_shared<ndtClassifier::Classifier>();
 
     auto topologyAndFlowMonitor =
         std::make_shared<TopologyAndFlowMonitor>(graph, graphMutex, eventBus, mode);
 
     deviceConfigurationAndPowerManager =
-        std::make_shared<DeviceConfigurationAndPowerManager>(topologyAndFlowMonitor, mode, GW_IP);
+        std::make_shared<DeviceConfigurationAndPowerManager>(topologyAndFlowMonitor, mode, GW_IP, classifier);
 
     auto collector =
         std::make_shared<sflow::FlowLinkUsageCollector>(topologyAndFlowMonitor,
                                                         flowRoutingManager,
                                                         deviceConfigurationAndPowerManager,
                                                         eventBus,
-                                                        mode);
+                                                        mode,
+                                                        classifier);
 
     auto dataManager = std::make_unique<HistoricalDataManager>(topologyAndFlowMonitor, mode);
 
