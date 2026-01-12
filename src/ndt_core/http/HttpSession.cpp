@@ -458,7 +458,7 @@ HttpSession::handleLinkRecovery(http::response<http::string_body>& res)
     uint32_t dstInterface = jsonData["dst_interface"].get<uint32_t>();
 
     SPDLOG_LOGGER_INFO(Logger::instance(),
-                       "link recovered on {}:{} → {}:{}",
+                       "link recovered on {}:{} -> {}:{}",
                        srcDpid,
                        srcInterface,
                        dstDpid,

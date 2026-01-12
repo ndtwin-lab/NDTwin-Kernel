@@ -134,6 +134,7 @@ Returns the complete graph topology configured in *setting/StaticNetworkTopology
 **is_up** suggests whether a device reply ping.
 **is_enable** in switch node suggests whether the switch is connected to controller. 
 At the edge between the switch and host, the dpid and interface on the host side are set to 0.
+**Note:** src_ip/dst_ip are in network order.
 ### Request
 * Method: **GET**
 ### Response
@@ -247,6 +248,7 @@ Returned when an unknown exception type is thrown.
 Returns detailed information about all active flows observed by the network system (sFLow), including their estimated sending rates, timestamps, protocol type, and the full path taken across the network.
 
 **Note:** For ICMP packets, the src_port field represents the ICMP type, and the dst_port field represents the ICMP code.
+**Note:** src_ip/dst_ip are in network order.
 ### Request
 * Method: **GET**
 ### Response
@@ -987,6 +989,7 @@ Returned when an unknown exception type is thrown.
 ### Description
 Generates the current topology StaticNetworkTopology content.
 
+**Note:** src_ip/dst_ip are in network order.
 ### Request
 * Method: **GET**
 
@@ -1136,7 +1139,7 @@ Notifies the NDT server that a new simulation case has been dispatched by an ext
 
 ### Request
 * Method: **POST**
-* **Content-Type:** `application/json`
+* Content-Type: **application/json**
 * **Body Parameters:**
 
   | Field       | Type   | Description                                                             |

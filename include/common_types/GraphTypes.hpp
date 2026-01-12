@@ -214,7 +214,7 @@ struct EdgeProperties
 
     uint64_t leftBandwidthFromFlowSample = MININET_INTERFACE_SPEED;
 
-    // string srcIp (host or agent ip), port represents "physical" port (on swithc)
+    // srcIp (host or agent ip), port represents "physical" port (on switch)
     std::vector<uint32_t> srcIp;
     uint64_t srcDpid;
     uint32_t srcInterface;
@@ -223,8 +223,7 @@ struct EdgeProperties
     uint64_t dstDpid;
     uint32_t dstInterface;
 
-    // std::set<sflow::FlowKey> flowSet; // For finding max flow count, and link failure detection
-    std::unordered_map<sflow::FlowKey, TimePoint, sflow::FlowKeyHash> flowSet;
+    std::unordered_map<sflow::FlowKey, TimePoint, sflow::FlowKeyHash> flowSet;  // For finding max flow count, and link failure detection
 };
 
 inline void

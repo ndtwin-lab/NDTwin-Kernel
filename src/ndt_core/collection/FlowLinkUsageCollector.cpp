@@ -17,13 +17,14 @@
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
- *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica>
  *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
  *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
  *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
  */
 #include "ndt_core/collection/FlowLinkUsageCollector.hpp"
 #include "common_types/GraphTypes.hpp"
+#include "ndt_core/collection/Classifier.hpp"
 #include "ndt_core/collection/TopologyAndFlowMonitor.hpp"
 #include "ndt_core/power_management/DeviceConfigurationAndPowerManager.hpp"
 #include "utils/Logger.hpp"
@@ -76,12 +77,14 @@ FlowLinkUsageCollector::FlowLinkUsageCollector(
     std::shared_ptr<FlowRoutingManager> flowRoutingManager,
     std::shared_ptr<DeviceConfigurationAndPowerManager> deviceManager,
     std::shared_ptr<EventBus> eventBus,
-    int mode)
+    int mode,
+    std::shared_ptr<ndtClassifier::Classifier> classifier)
     : m_sockfd(-1),
       m_topologyAndFlowMonitor(std::move(topologyAndFlowMonitor)),
       m_deviceConfigurationAndPowerManager(std::move(deviceManager)),
       m_eventBus(std::move(eventBus)),
-      m_mode(static_cast<utils::DeploymentMode>(mode))
+      m_mode(static_cast<utils::DeploymentMode>(mode)),
+      m_classifier(classifier)
 {
 }
 
@@ -301,6 +304,7 @@ FlowLinkUsageCollector::start()
     m_testCalAvgFlowSendingRatesRandomly =
         thread(&FlowLinkUsageCollector::testCalAvgFlowSendingRatesRandomly, this);
     m_purgeThread = thread(&FlowLinkUsageCollector::purgeIdleFlows, this);
+    m_calFlowPathByQueried = thread(&FlowLinkUsageCollector::calFlowPathByQueried, this);
 }
 
 void
@@ -330,6 +334,10 @@ FlowLinkUsageCollector::stop()
     if (m_purgeThread.joinable())
     {
         m_purgeThread.join();
+    }
+    if (m_calFlowPathByQueried.joinable())
+    {
+        m_calFlowPathByQueried.join();
     }
 }
 
@@ -619,7 +627,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
             unique_lock lock(m_flowInfoTableMutex);
             uint32_t sampleLen = ntohl(data[index + 1]);
 
-            // Step 1: Extract flow data. Offsets differ by vendor.
+            // 1. Extract flow data. Offsets differ by vendor.
             uint32_t inputPort, outputPort, frameLength;
             uint8_t protocol;
             uint32_t srcIp, dstIp;
@@ -728,7 +736,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                 }
             }
 
-            // Step 2: Process the extracted data using common logic.
+            // 2. Process the extracted data using common logic.
             if (protocol == 6 || protocol == 17 || protocol == 1) // TCP, UDP, or ICMP
             {
                 if (m_mode == utils::MININET)
@@ -838,7 +846,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                                     utils::ipToString(key.dstIP),
                                     m_flowInfoTable[key].endTime);
 
-                // Step 2: Update the network map using the CORRECT direction
+                // 2. Update the network map using the CORRECT direction
                 if (m_allPathMap.count({key.srcIP, key.dstIP}))
                 {
                     if (isIngress)
@@ -848,7 +856,6 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                                 m_topologyAndFlowMonitor->findReverseEdgeByAgentIpAndPort(
                                     {agentIp, relevantPort}))
                         {
-                            // m_topologyAndFlowMonitor->setEdgeFlow(edgeOpt.value(), key, true);
                             m_topologyAndFlowMonitor->touchEdgeFlow(edgeOpt.value(), key);
                         }
                     }
@@ -859,7 +866,6 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                         if (auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByAgentIpAndPort(
                                 {agentIp, relevantPort}))
                         {
-                            // m_topologyAndFlowMonitor->setEdgeFlow(edgeOpt.value(), key, true);
                             m_topologyAndFlowMonitor->touchEdgeFlow(edgeOpt.value(), key);
                         }
                     }
@@ -913,7 +919,7 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                 int hopsCounter = 0;
                 for (auto& [agentKey, stats] : info.agentFlowStats)
                 {
-                    // --- STEP 1: CALCULATE ALL RATES FOR THE CURRENT INTERVAL ---
+                    // --- 1. CALCULATE ALL RATES FOR THE CURRENT INTERVAL ---
 
                     uint32_t currentSamplingRate =
                         (stats.samplingRate > 0) ? stats.samplingRate : 1;
@@ -943,7 +949,7 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                     stats.avgPacketRate =
                         (packetCountCurrent - packetCountPrevious) * currentSamplingRate;
 
-                    // --- STEP 2: AGGREGATE THE RESULTS (UNCHANGED) ---
+                    // --- 2. AGGREGATE THE RESULTS  ---
 
                     avgFlowSendingRateTemp += stats.avgByteRateInBps;
                     avgPacketSendingRateTemp += stats.avgPacketRate;
@@ -953,8 +959,8 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                         hopsCounter++;
                     }
 
-                    // --- STEP 3: UPDATE STATE FOR THE *NEXT* INTERVAL ---
-                    // FIX: All state updates are done together at the end.
+                    // --- 3. UPDATE STATE FOR THE *NEXT* INTERVAL ---
+                    // All state updates are done together at the end.
 
                     stats.ingressByteCountPrevious = stats.ingressByteCountCurrent;
                     stats.egressByteCountPrevious = stats.egressByteCountCurrent;
@@ -1144,7 +1150,6 @@ FlowLinkUsageCollector::ipFromFrontBack(uint32_t ipFront, uint32_t ipBack)
     uint32_t netOrder =
         (uint32_t(o1) << 24) | (uint32_t(o2) << 16) | (uint32_t(o3) << 8) | (uint32_t(o4) << 0);
 
-    // convert to host order
     return ntohl(netOrder);
 }
 
@@ -1234,7 +1239,12 @@ FlowLinkUsageCollector::getFlowInfoJson()
         j["first_sampled_time"] = utils::formatTime(flowInfo.startTime);
         j["latest_sampled_time"] = utils::formatTime(flowInfo.endTime);
         j["path"] = nlohmann::json::array();
-        for (const auto& [node, interface] : m_allPathMap[{flowKey.srcIP, flowKey.dstIP}])
+        // for (const auto& [node, interface] : m_allPathMap[{flowKey.srcIP, flowKey.dstIP}])
+        // {
+        //     j["path"].push_back({{"node", node}, {"interface", interface}});
+        // }
+        // TODO: Test Classifier
+        for (const auto& [node, interface] : flowInfo.flowPath)
         {
             j["path"].push_back({{"node", node}, {"interface", interface}});
         }
@@ -1321,18 +1331,19 @@ FlowLinkUsageCollector::fetchAllDestinationPaths()
 {
     try
     {
-        // 1) Build and run the curl command
+        // 1. Build and run the curl command
         //    -s: silent mode
         //    -H: set header
         const std::string cmd = "curl -s "
                                 "-H \"User-Agent: NDT-client/1.1\" "
-                                "\"http://127.0.0.1:8080/ryu_server/all_destination_paths\"";
+                                "\"http://" +
+                                AppConfig::RYU_IP_AND_PORT + "/ryu_server/all_destination_paths\"";
         const std::string output = utils::execCommand(cmd);
 
-        // 2) Parse JSON
+        // 2. Parse JSON
         auto body = json::parse(output);
 
-        // 3) Check status field
+        // 3. Check status field
         if (!body.contains("status") || body["status"] != "success")
         {
             SPDLOG_LOGGER_WARN(Logger::instance(),
@@ -1341,7 +1352,7 @@ FlowLinkUsageCollector::fetchAllDestinationPaths()
             return;
         }
 
-        // 4) Extract paths array
+        // 4. Extract paths array
         const auto& allPathsJson = body.at("all_destination_paths");
         std::vector<sflow::Path> paths;
         for (const auto& pathJson : allPathsJson)
@@ -1377,7 +1388,7 @@ FlowLinkUsageCollector::fetchAllDestinationPaths()
             }
         }
 
-        // 5) Update and log
+        // 5. Update and log
         setAllPaths(paths);
         SPDLOG_LOGGER_INFO(Logger::instance(), "Pulled {} paths from controller", paths.size());
     }
@@ -1435,6 +1446,7 @@ FlowLinkUsageCollector::printAllPathMap()
 }
 
 using Rule = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>;
+
 // (net, mask, outPort, priority)
 
 static inline uint32_t
@@ -1738,6 +1750,67 @@ FlowLinkUsageCollector::getPathBetweenHostsJson(const std::string& srcHostName,
     result["switch_path"] = pathJson;
 
     return result;
+}
+
+void
+FlowLinkUsageCollector::calFlowPathByQueried()
+{
+    while (m_running.load())
+    {
+        for (const auto& [flowKey, flowInfo] : m_flowInfoTable)
+        {
+            ndtClassifier::FlowKey fk{};
+            fk.ipProto = flowKey.protocol;
+            fk.ipv4Dst = ntohl(flowKey.dstIP);
+            fk.ipv4Src = ntohl(flowKey.srcIP);
+            fk.tpDst = flowKey.dstPort;
+            fk.tpSrc = flowKey.srcPort;
+            fk.ethType = 0x0800;
+
+            auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByHostIp(flowKey.srcIP);
+            if (!edgeOpt.has_value())
+            {
+                SPDLOG_LOGGER_WARN(Logger::instance(), "edge not found");
+                continue;
+            }
+
+            auto edge = *edgeOpt;
+
+            sflow::Path p;
+            auto graph = m_topologyAndFlowMonitor->getGraph();
+            p.push_back(make_pair(flowKey.srcIP, graph[edge].dstInterface));
+
+            for (int hop = 0; hop < 100; ++hop)
+            {
+                auto srcSw = boost::target(edge, graph);
+                if (graph[srcSw].dpid == 0)
+                {
+                    auto it = find(graph[srcSw].ip.begin(), graph[srcSw].ip.end(), flowKey.dstIP);
+                    if (it != graph[srcSw].ip.end())
+                    {
+                        p.push_back(make_pair(flowKey.dstIP, 0));
+                    }
+                    break;
+                }
+
+                auto effect = m_classifier->lookup(graph[srcSw].dpid, fk);
+                if (!effect || effect->outputPorts.empty())
+                {
+                    break;
+                }
+
+                uint32_t outPort = effect->outputPorts.front();
+                p.push_back(make_pair(graph[srcSw].dpid, outPort));
+
+                edgeOpt = m_topologyAndFlowMonitor->findEdgeByDpidAndPort(
+                    make_pair(graph[srcSw].dpid, outPort));
+                edge = *edgeOpt;
+            }
+
+            m_flowInfoTable[flowKey].flowPath = p;
+        }
+        std::this_thread::sleep_for(chrono::microseconds(1000));
+    }
 }
 
 } // namespace sflow

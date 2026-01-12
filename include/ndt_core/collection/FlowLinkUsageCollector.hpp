@@ -17,7 +17,7 @@
  *     Prof. Shie-Yuan Wang <National Yang Ming Chiao Tung University; CITI, Academia Sinica>
  *     Ms. Xiang-Ling Lin <CITI, Academia Sinica>
  *     Mr. Po-Yu Juan <CITI, Academia Sinica>
- *     Mr. Tsu-Li Mou <CITI, Academia Sinica> 
+ *     Mr. Tsu-Li Mou <CITI, Academia Sinica>
  *     Mr. Zhen-Rong Wu <National Taiwan Normal University>
  *     Mr. Ting-En Chang <University of Wisconsin, Milwaukee>
  *     Mr. Yu-Cheng Chen <National Yang Ming Chiao Tung University>
@@ -44,6 +44,12 @@ class DeviceConfigurationAndPowerManager; // lines 48-48
 class EventBus;                           // lines 47-47
 class FlowRoutingManager;                 // lines 46-46
 class TopologyAndFlowMonitor;             // lines 45-45
+
+namespace ndtClassifier
+{
+class Classifier;
+struct FlowKey;
+}
 
 namespace sflow
 {
@@ -79,7 +85,8 @@ class FlowLinkUsageCollector
                            std::shared_ptr<FlowRoutingManager> flowRoutingManager,
                            std::shared_ptr<DeviceConfigurationAndPowerManager> deviceManager,
                            std::shared_ptr<EventBus> eventBusm,
-                           int mode);
+                           int mode,
+                           std::shared_ptr<ndtClassifier::Classifier> classifier);
     ~FlowLinkUsageCollector();
 
     /**
@@ -180,9 +187,7 @@ class FlowLinkUsageCollector
      */
     std::map<std::pair<uint32_t, uint32_t>, size_t> getAllSwitchCounts();
 
-
     json getPathBetweenHostsJson(const std::string& srcHostName, const std::string& dstHostName);
-
 
   private:
     inline std::string ourIpToString(uint32_t ipFront, uint32_t ipBack);
@@ -194,6 +199,7 @@ class FlowLinkUsageCollector
     void handlePacket(char* buffer);
     void purgeIdleFlows();
     void fetchAllDestinationPaths();
+    void calFlowPathByQueried();
 
     std::unordered_map<FlowKey, FlowInfo, FlowKeyHash> m_flowInfoTable;
 
@@ -209,6 +215,7 @@ class FlowLinkUsageCollector
     std::thread m_calAvgFlowSendingRateThreadPeriodically;
     std::thread m_testCalAvgFlowSendingRatesRandomly;
     std::thread m_purgeThread;
+    std::thread m_calFlowPathByQueried;
 
     mutable std::shared_mutex m_flowInfoTableMutex;
 
@@ -229,6 +236,8 @@ class FlowLinkUsageCollector
     // calc the count of switch
     std::map<std::pair<uint32_t, uint32_t>, size_t> m_switchCountMap;
     mutable std::shared_mutex m_switchCountMapMutex;
+
+    std::shared_ptr<ndtClassifier::Classifier> m_classifier;
 };
 
 } // namespace sflow
