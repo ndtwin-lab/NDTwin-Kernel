@@ -110,10 +110,10 @@ struct FlowKey
     uint32_t ipv4Dst = 0;
 
     /** @brief Transport-layer source port (TCP/UDP). */
-    uint8_t tpSrc = 0;
+    uint16_t tpSrc = 0;
 
     /** @brief Transport-layer destination port (TCP/UDP). */
-    uint8_t tpDst = 0;
+    uint16_t tpDst = 0;
 
     /** @brief VLAN tag control information (if used). */
     uint16_t vlanTci = 0;
@@ -122,6 +122,8 @@ struct FlowKey
      * @details Useful if you match on metadata; otherwise keep 0.
      */
     uint64_t metadata = 0;
+
+    bool operator==(const FlowKey& o) const = default;
 };
 
 /**

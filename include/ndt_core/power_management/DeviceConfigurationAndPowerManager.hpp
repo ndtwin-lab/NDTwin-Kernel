@@ -149,15 +149,6 @@ class DeviceConfigurationAndPowerManager
     json getOpenFlowTables();
 
     /**
-     * @brief Get parsed OpenFlow table entries as a structured map.
-     *
-     * @param dpid If non-zero, return entries only for the specified switch DPID.
-     *             If zero, return entries for all switches.
-     * @return Map: dpid -> list of (dstIp, outPort, priority, mask) tuples.
-     */
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
-    getOpenFlowTable(uint64_t dpid = 0);
-    /**
      * @brief Get the latest cached CPU utilization report.
      */
     json getCpuUtilization();
@@ -219,8 +210,6 @@ class DeviceConfigurationAndPowerManager
     // Query Mininet topology for switch up/down state
     json queryMininet(const std::string& ipParam) const;
     json parseFlowStatsTextToJson(const std::string& responseText) const;
-    std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> parseFlowStatsTextToVector(
-        const std::string& responseText) const;
 
     bool pingSwitch(const std::string& ip, int timeout_sec);
     void pingWorker(int interval_sec);

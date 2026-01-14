@@ -51,12 +51,6 @@ enum class FlowOp : uint8_t
  *  - priority: Flow priority (OpenFlow rule priority).
  *  - match: Match fields in JSON form (e.g., eth_type, ipv4_dst).
  *  - actions: Actions in JSON form (e.g., OUTPUT port).
- *
- * Cached destination IPv4 (host byte order):
- *  - dstIpU32: Destination IPv4 address (the IP part).
- *  - dstMaskU32: Destination mask derived from prefix length (e.g., /24 -> 255.255.255.0).
- *  - dstPrefixLen: CIDR prefix length (0..32). Defaults to 32 (/32 host route).
- *
  *  - idleTimeout: Optional idle timeout in seconds (0 means no idle timeout unless your controller
  *    interprets it differently).
  */
@@ -67,10 +61,6 @@ struct FlowJob {
     int priority;
     nlohmann::json match;
     nlohmann::json actions;
-
-    uint32_t dstIpU32 = 0;        // host-order IP
-    uint32_t dstMaskU32 = 0xFFFFFFFFu;
-    uint8_t  dstPrefixLen = 32;
 
     int idleTimeout = 0;
 };

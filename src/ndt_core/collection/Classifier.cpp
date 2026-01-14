@@ -809,6 +809,37 @@ buildMaskAndValueFromMatch(const nlohmann::json& match, KeyBytes& outMaskBytes, 
     }
 }
 
+static inline std::string
+toUpper(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::toupper(c));
+    });
+    return s;
+}
+
+static bool
+parseUint(const std::string& s, uint32_t& out)
+{
+    if (s.empty())
+    {
+        return false;
+    }
+    char* end = nullptr;
+    errno = 0;
+    unsigned long v = std::strtoul(s.c_str(), &end, 10);
+    if (errno != 0 || end == s.c_str() || *end != '\0')
+    {
+        return false;
+    }
+    if (v > 0xFFFFFFFFul)
+    {
+        return false;
+    }
+    out = static_cast<uint32_t>(v);
+    return true;
+}
+
 /** @brief Parse an actions array into RuleEffect.
  *
  * @details
@@ -829,15 +860,61 @@ parseActionsArrayIntoEffect(const nlohmann::json& actions, RuleEffect& effect)
             std::string s = a.get<std::string>();
             auto colon = s.find(':');
             std::string kind = (colon == std::string::npos) ? s : s.substr(0, colon);
-            std::string arg = (colon == std::string::npos) ? "" : s.substr(colon + 1);
+            std::string rest = (colon == std::string::npos) ? "" : s.substr(colon + 1);
 
-            if (kind == "OUTPUT" && !arg.empty())
+            kind = toUpper(kind);
+
+            if (kind == "OUTPUT" && !rest.empty())
             {
-                effect.outputPorts.push_back(static_cast<uint32_t>(std::stoul(arg)));
+                // rest might be:
+                // "1"
+                // "CONTROLLER"
+                // "CONTROLLER:65535"
+                // "LOCAL" / "FLOOD" / "NORMAL" ...
+
+                auto colon2 = rest.find(':');
+                std::string portStr = (colon2 == std::string::npos) ? rest : rest.substr(0, colon2);
+                portStr = toUpper(portStr);
+
+                // OpenFlow reserved ports (store as uint32_t constants)
+                constexpr uint32_t OFPP_CONTROLLER = 0xFFFFFFFDu;
+                constexpr uint32_t OFPP_LOCAL = 0xFFFFFFFEu;
+                // constexpr uint32_t OFPP_ANY = 0xFFFFFFFFu;
+                constexpr uint32_t OFPP_FLOOD = 0xFFFFFFFBu;
+                constexpr uint32_t OFPP_NORMAL = 0xFFFFFFFAu;
+
+                uint32_t port = 0;
+                if (portStr == "CONTROLLER")
+                {
+                    port = OFPP_CONTROLLER;
+                }
+                else if (portStr == "LOCAL")
+                {
+                    port = OFPP_LOCAL;
+                }
+                else if (portStr == "FLOOD")
+                {
+                    port = OFPP_FLOOD;
+                }
+                else if (portStr == "NORMAL")
+                {
+                    port = OFPP_NORMAL;
+                }
+                else if (!parseUint(portStr, port))
+                {
+                    // unknown OUTPUT target -> skip
+                    continue;
+                }
+
+                effect.outputPorts.push_back(port);
             }
-            else if (kind == "GROUP" && !arg.empty())
+            else if (kind == "GROUP" && !rest.empty())
             {
-                effect.groupId = static_cast<uint32_t>(std::stoul(arg));
+                uint32_t gid = 0;
+                if (parseUint(rest, gid))
+                {
+                    effect.groupId = gid;
+                }
             }
         }
     }
@@ -1007,7 +1084,12 @@ struct Classifier::Impl
     /** @brief Insert a rule if new, or mark it as seen if it already exists. */
     void upsertRule(SwitchClassifier& sw, const ParsedRule& pr)
     {
-        SPDLOG_LOGGER_TRACE(Logger::instance(), "tableId {} priority {} effect(output port) {} maskedValue {}", std::to_string(pr.tableId), std::to_string(pr.priority), std::to_string(pr.effect.outputPorts.front()), spdlog::to_hex(pr.maskedValue.bytes));
+        SPDLOG_LOGGER_TRACE(Logger::instance(),
+                            "tableId {} priority {} effect(output port) {} maskedValue {}",
+                            std::to_string(pr.tableId),
+                            std::to_string(pr.priority),
+                            std::to_string(pr.effect.outputPorts.front()),
+                            spdlog::to_hex(pr.maskedValue.bytes));
 
         auto it = sw.rulesById.find(pr.id);
         if (it == sw.rulesById.end())
@@ -1112,7 +1194,10 @@ struct Classifier::Impl
                 break;
             }
 
-            SPDLOG_LOGGER_TRACE(Logger::instance(), "mask {}", spdlog::to_hex(st->mask->bytes.bytes.begin(), st->mask->bytes.bytes.end()));
+            SPDLOG_LOGGER_TRACE(
+                Logger::instance(),
+                "mask {}",
+                spdlog::to_hex(st->mask->bytes.bytes.begin(), st->mask->bytes.bytes.end()));
 
             KeyBytes maskedKey = bitAnd(keyBytes, st->mask->bytes);
             auto it = st->buckets.find(maskedKey);
@@ -1131,7 +1216,15 @@ struct Classifier::Impl
                     bestPriority = cand->priority;
                 }
 
-                SPDLOG_LOGGER_TRACE(Logger::instance(), "bestPriority key {}:{} -> {}:{}, maskedKey {}, effect(outport) {}", key.ipv4Src, key.tpSrc, key.ipv4Dst, key.tpDst, spdlog::to_hex(maskedKey.bytes), best->effect.outputPorts.front());
+                SPDLOG_LOGGER_TRACE(
+                    Logger::instance(),
+                    "bestPriority key {}:{} -> {}:{}, maskedKey {}, effect(outport) {}",
+                    key.ipv4Src,
+                    key.tpSrc,
+                    key.ipv4Dst,
+                    key.tpDst,
+                    spdlog::to_hex(maskedKey.bytes),
+                    best->effect.outputPorts.front());
             }
         }
         return best;
@@ -1205,7 +1298,7 @@ Classifier::lookup(uint64_t dpid, const FlowKey& key, uint8_t tableId) const
     auto it = impl_->switches.find(dpid);
     if (it == impl_->switches.end())
     {
-        SPDLOG_LOGGER_WARN(Logger::instance(), "switch not found");
+        SPDLOG_LOGGER_WARN(Logger::instance(), "switch not found dpid {}", dpid);
         return std::nullopt;
     }
 

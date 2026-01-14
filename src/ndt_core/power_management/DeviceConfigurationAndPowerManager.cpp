@@ -554,76 +554,6 @@ DeviceConfigurationAndPowerManager::fetchOpenFlowTablesInternal()
     return result;
 }
 
-std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
-DeviceConfigurationAndPowerManager::getOpenFlowTable(uint64_t defaultDpid)
-{
-    SPDLOG_LOGGER_INFO(Logger::instance(), "getOpenFlowTable");
-
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
-        openFlowTables;
-
-    if (defaultDpid == 0)
-    {
-        auto graph = m_topologyAndFlowMonitor->getGraph();
-
-        for (auto v : boost::make_iterator_range(vertices(graph)))
-        {
-            const auto& props = graph[v];
-            if (props.vertexType != VertexType::SWITCH)
-            {
-                continue;
-            }
-
-            uint64_t dpid = props.dpid;
-            std::string cmd = fmt::format("curl -s -X GET http://{}/stats/flow/{}",
-                                          AppConfig::RYU_IP_AND_PORT,
-                                          dpid);
-
-            SPDLOG_LOGGER_INFO(spdlog::default_logger(),
-                               "DeviceManager: querying switch {} -> `{}`",
-                               dpid,
-                               cmd);
-
-            std::string raw = utils::execCommand(cmd);
-            SPDLOG_LOGGER_TRACE(spdlog::default_logger(),
-                                "DeviceManager: raw response for {}: {}",
-                                dpid,
-                                raw);
-
-            std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> flows =
-                parseFlowStatsTextToVector(raw);
-
-            // Store in map with dpid as key
-            openFlowTables[dpid] = flows;
-        }
-    }
-    else
-    {
-        std::string cmd = fmt::format("curl -s -X GET http:://{}/stats/flow/{}",
-                                      AppConfig::RYU_IP_AND_PORT,
-                                      defaultDpid);
-
-        SPDLOG_LOGGER_INFO(spdlog::default_logger(),
-                           "DeviceManager: querying switch {} -> `{}`",
-                           defaultDpid,
-                           cmd);
-
-        std::string raw = utils::execCommand(cmd);
-        SPDLOG_LOGGER_TRACE(spdlog::default_logger(),
-                            "DeviceManager: raw response for {}: {}",
-                            defaultDpid,
-                            raw);
-
-        std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> flows =
-            parseFlowStatsTextToVector(raw);
-
-        // Store in map with dpid as key
-        openFlowTables[defaultDpid] = flows;
-    }
-
-    return openFlowTables;
-}
-
 json
 DeviceConfigurationAndPowerManager::parseFlowStatsTextToJson(const std::string& responseText) const
 {
@@ -638,165 +568,70 @@ DeviceConfigurationAndPowerManager::parseFlowStatsTextToJson(const std::string& 
     }
 }
 
-static bool
-is_digits(const std::string& s)
-{
-    return !s.empty() &&
-           std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); });
-}
+// static bool
+// is_digits(const std::string& s)
+// {
+//     return !s.empty() &&
+//            std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); });
+// }
 
-static bool
-parseIpv4WithMask(const std::string& s, uint32_t& net, uint32_t& mask)
-{
-    std::string ipPart = s;
-    std::string maskPart;
+// static bool
+// parseIpv4WithMask(const std::string& s, uint32_t& net, uint32_t& mask)
+// {
+//     std::string ipPart = s;
+//     std::string maskPart;
 
-    if (auto slash = s.find('/'); slash != std::string::npos)
-    {
-        ipPart = s.substr(0, slash);
-        maskPart = s.substr(slash + 1);
-    }
+//     if (auto slash = s.find('/'); slash != std::string::npos)
+//     {
+//         ipPart = s.substr(0, slash);
+//         maskPart = s.substr(slash + 1);
+//     }
 
-    // default: /32
-    mask = 0xFFFFFFFFu;
+//     // default: /32
+//     mask = 0xFFFFFFFFu;
 
-    try
-    {
-        uint32_t ip = utils::ipStringToUint32(ipPart);
+//     try
+//     {
+//         uint32_t ip = utils::ipStringToUint32(ipPart);
 
-        if (!maskPart.empty())
-        {
-            if (maskPart.find('.') != std::string::npos)
-            {
-                // dotted mask: 255.255.255.0
-                mask = utils::ipStringToUint32(maskPart);
-            }
-            else if (is_digits(maskPart))
-            {
-                // prefix mask: 24
-                int p = std::stoi(maskPart);
-                if (p < 0 || p > 32)
-                {
-                    return false;
-                }
-                if (p == 0)
-                {
-                    mask = 0u;
-                }
-                else
-                {
-                    mask = 0xFFFFFFFFu << (32 - p); // safe because p!=0
-                }
-            }
-            else
-            {
-                return false;
-            }
-        }
+//         if (!maskPart.empty())
+//         {
+//             if (maskPart.find('.') != std::string::npos)
+//             {
+//                 // dotted mask: 255.255.255.0
+//                 mask = utils::ipStringToUint32(maskPart);
+//             }
+//             else if (is_digits(maskPart))
+//             {
+//                 // prefix mask: 24
+//                 int p = std::stoi(maskPart);
+//                 if (p < 0 || p > 32)
+//                 {
+//                     return false;
+//                 }
+//                 if (p == 0)
+//                 {
+//                     mask = 0u;
+//                 }
+//                 else
+//                 {
+//                     mask = 0xFFFFFFFFu << (32 - p); // safe because p!=0
+//                 }
+//             }
+//             else
+//             {
+//                 return false;
+//             }
+//         }
 
-        net = ip & mask; // store the network part
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>
-DeviceConfigurationAndPowerManager::parseFlowStatsTextToVector(
-    const std::string& responseText) const
-{
-    std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>> result;
-
-    try
-    {
-        if (responseText.empty())
-        {
-            SPDLOG_LOGGER_TRACE(Logger::instance(), "empty response");
-            return result;
-        }
-
-        auto j = json::parse(responseText);
-        SPDLOG_LOGGER_TRACE(Logger::instance(), "Parsed JSON:\n{}", j.dump(2));
-
-        for (const auto& [dpid, flows] : j.items())
-        {
-            for (const auto& flow : flows)
-            {
-                std::string dstStr;
-                uint32_t outPort = 0;
-                uint32_t priority = 0;
-
-                // Accept both OF1.0 (nw_dst) and OF1.3 style (ipv4_dst) just in case
-                if (flow.contains("match"))
-                {
-                    const auto& m = flow["match"];
-                    if (m.contains("nw_dst"))
-                    {
-                        dstStr = m["nw_dst"].get<std::string>();
-                    }
-                    else if (m.contains("ipv4_dst"))
-                    {
-                        dstStr = m["ipv4_dst"].get<std::string>();
-                    }
-                }
-
-                if (flow.contains("actions"))
-                {
-                    for (const auto& action : flow["actions"])
-                    {
-                        if (!action.is_string())
-                        {
-                            continue;
-                        }
-                        const std::string a = action.get<std::string>();
-                        if (a.rfind("OUTPUT:", 0) != 0)
-                        {
-                            continue;
-                        }
-
-                        std::string portStr = a.substr(7);
-                        if (!portStr.empty() &&
-                            std::all_of(portStr.begin(), portStr.end(), [](unsigned char c) {
-                                return std::isdigit(c);
-                            }))
-                        {
-                            outPort = static_cast<uint32_t>(std::stoul(portStr));
-                        }
-                        break; // take first OUTPUT
-                    }
-                }
-
-                if (flow.contains("priority"))
-                {
-                    priority = flow["priority"].get<uint32_t>();
-                }
-
-                if (!dstStr.empty() && outPort != 0)
-                {
-                    uint32_t net = 0, mask = 0;
-                    if (parseIpv4WithMask(dstStr, net, mask))
-                    {
-                        result.emplace_back(net, mask, outPort, priority);
-                    }
-                    else
-                    {
-                        SPDLOG_LOGGER_WARN(Logger::instance(),
-                                           "Failed to parse dst/mask: {}",
-                                           dstStr);
-                    }
-                }
-            }
-        }
-    }
-    catch (const std::exception& e)
-    {
-        SPDLOG_LOGGER_ERROR(Logger::instance(), "JSON parsing failed: {}", e.what());
-    }
-
-    return result;
-}
+//         net = ip & mask; // store the network part
+//         return true;
+//     }
+//     catch (...)
+//     {
+//         return false;
+//     }
+// }
 
 json
 DeviceConfigurationAndPowerManager::fetchPowerReportInternal()
@@ -1399,7 +1234,7 @@ DeviceConfigurationAndPowerManager::openflowTablesUpdateWorker()
 
             // 2. Lock and update caches (FAST part)
             {
-                std::lock_guard<std::shared_mutex> lock(m_statusMutex);
+                std::lock_guard<std::shared_mutex> lock(m_openflowTablesMutex);
                 m_cachedOpenFlowTables = std::move(newTables);
             }
         }
@@ -1453,7 +1288,7 @@ DeviceConfigurationAndPowerManager::getMemoryUtilization()
 json
 DeviceConfigurationAndPowerManager::getOpenFlowTables()
 {
-    std::shared_lock<std::shared_mutex> lock(m_statusMutex);
+    std::shared_lock<std::shared_mutex> lock(m_openflowTablesMutex);
     return m_cachedOpenFlowTables;
 }
 
@@ -1488,10 +1323,28 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
 
     // Build or match identifier fields for a flow.
     auto extractKey = [](const json& e) {
+        int tableId = e.value("table_id", 0);
         int priority = e.value("priority", 0);
-        int eth_type = e.at("match").value("eth_type", 0);
-        std::string ipv4_dst = e.at("match").value("ipv4_dst", "");
-        return std::tuple<int, int, std::string>{priority, eth_type, ipv4_dst};
+        const json& match = e.at("match");
+
+        // Support 5-tuple
+        ndtClassifier::FlowKey fk = {};
+        fk.ethType = match.value("eth_type", 0);
+        fk.ipProto = match.value("ip_proto", 0);
+        fk.ipv4Dst = match.value("ipv4_dst", 0);
+        fk.ipv4Src = match.value("ipv4_src", 0);
+
+        if(fk.ipProto == 6) // TCP
+        {
+            fk.tpDst = match.value("tcp_dst", 0);   
+            fk.tpSrc = match.value("tcp_src", 0);
+        }else if(fk.ipProto == 17)  // UDP
+        {
+            fk.tpDst = match.value("udp_dst", 0);
+            fk.tpSrc = match.value("udp_src", 0);
+        }
+
+        return std::tuple<int, int, ndtClassifier::FlowKey>{tableId, priority, fk};
     };
 
     // --- INSTALL ---

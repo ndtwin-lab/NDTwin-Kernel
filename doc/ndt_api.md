@@ -29,28 +29,22 @@ Called by Ryu when a link-down event is detected. Marks the edge(s) DOWN and emi
   "error": "Invalid link-failure payload"
 }
 ```
-* Status: **404 Not Found**
-```json
-{
-  "error": "edge not found in topology"
-}
-```
-* **Status: 500 Internal Server Error**
-```json
-{
-  "error": "internal server error"
-}
-```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
   "details": "<exception message>"
 }
 ```
+* Status: **404 Not Found**
+```json
+{
+  "error": "edge not found in topology"
+}
+```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -58,7 +52,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -96,22 +90,22 @@ Called by Ryu when a failed link becomes UP. Marks the edge(s) UP.
   "error": "Missing src_dpid or dst_dpid or src_interface or dst_interface"
 }
 ```
-* Status: **404 Not Found**
-```json
-{
-  "error": "edge not found in topology"
-}
-```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
   "details": "<exception message>"
 }
 ```
+* Status: **404 Not Found**
+```json
+{
+  "error": "edge not found in topology"
+}
+```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -119,7 +113,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -134,7 +128,10 @@ Returns the complete graph topology configured in *setting/StaticNetworkTopology
 **is_up** suggests whether a device reply ping.
 **is_enable** in switch node suggests whether the switch is connected to controller. 
 At the edge between the switch and host, the dpid and interface on the host side are set to 0.
+
+
 **Note:** src_ip/dst_ip are in network order.
+
 ### Request
 * Method: **GET**
 ### Response
@@ -219,7 +216,7 @@ At the edge between the switch and host, the dpid and interface on the host side
 ```
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -227,7 +224,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -235,7 +232,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -248,7 +245,9 @@ Returned when an unknown exception type is thrown.
 Returns detailed information about all active flows observed by the network system (sFLow), including their estimated sending rates, timestamps, protocol type, and the full path taken across the network.
 
 **Note:** For ICMP packets, the src_port field represents the ICMP type, and the dst_port field represents the ICMP code.
+
 **Note:** src_ip/dst_ip are in network order.
+
 ### Request
 * Method: **GET**
 ### Response
@@ -346,7 +345,7 @@ Returns detailed information about all active flows observed by the network syst
 ```
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -354,7 +353,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -362,7 +361,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -416,7 +415,7 @@ Each entry includes the DPID of the switch and the exact OpenFlow flow entries a
 ```
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -424,7 +423,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -432,7 +431,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -475,7 +474,7 @@ In TESTBED mode, power values are collected via SSH from each switch's IP addres
 ```
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -483,7 +482,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -491,7 +490,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -512,7 +511,6 @@ Query the power state of one or all switches.
 
 Results are returned as a JSON object where each key is a switch IP and each value is `"ON"` or `"OFF"`.
 
----
 
 ### Request
 * Query Parameter:
@@ -541,20 +539,39 @@ Results are returned as a JSON object where each key is a switch IP and each val
 ```
 
 #### Error
-
-* **Status: 404 Not Found**
-
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* Status: **400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+* Status: **404 Not Found**
 ```json
 {
   "error": "Unknown switch IP"
 }
 ```
-
-* **Status: 500 Internal Server Error**
-
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -585,8 +602,7 @@ POST "http://localhost:8000/ndt/set_switches_power_state?ip=10.10.10.10&action=o
 
 #### Success
 
-* **Status: 200 OK**
-
+* Status: **200 OK**
 ```json
 {
   "10.10.10.10": "Success"
@@ -594,14 +610,14 @@ POST "http://localhost:8000/ndt/set_switches_power_state?ip=10.10.10.10&action=o
 ```
 
 #### Error
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "Missing or malformed query parameters"
 }
 ```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -609,7 +625,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -617,7 +633,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -664,7 +680,7 @@ Reconstructs the new path for affected flows and updates the allPathMap.
 ```
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -672,7 +688,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -680,7 +696,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -721,7 +737,7 @@ Reconstructs the new path for affected flows and updates the allPathMap.
 ```
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -729,7 +745,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -737,7 +753,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -784,7 +800,7 @@ Reconstructs the new path for affected flows and updates the allPathMap.
 ```
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -792,7 +808,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -800,7 +816,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -877,22 +893,22 @@ GET "http://localhost:8000/ndt/inform_switch_entered?dpid=106225808402492"
   "error": "Invalid dpid format"
 }
 ```
-* Status: **404 Not Found**
-```json
-{
-  "error": "Switch not found"
-}
-```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
   "details": "<exception message>"
 }
 ```
+* Status: **404 Not Found**
+```json
+{
+  "error": "Switch not found"
+}
+```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -900,7 +916,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -955,22 +971,22 @@ Updates the name of a switch or host in the NDT topology and StaticNetworkTopolo
   "error": 	"Invalid request format."
 }
 ```
-* Status: **404 Not Found**
-```json
-{
-  "error": 	"Device not found."
-}
-```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
   "details": "<exception message>"
 }
 ```
+* Status: **404 Not Found**
+```json
+{
+  "error": 	"Device not found."
+}
+```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -978,7 +994,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -1045,7 +1061,7 @@ Generates the current topology StaticNetworkTopology content.
 
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -1053,7 +1069,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -1061,7 +1077,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -1108,7 +1124,7 @@ When an application is registered:
 }
 ```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -1116,7 +1132,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -1124,7 +1140,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -1164,19 +1180,17 @@ Notifies the NDT server that a new simulation case has been dispatched by an ext
 
 #### Success
 
-* **Status:** `202 Accepted`
-* **Body:**
-
-  ```json
-  {
-    "status": "Request received (response from simulation server)"
-  }
-  ```
+* Status: **202 Accepted**
+```json
+{
+  "status": "Request received (response from simulation server)"
+}
+```
 
 #### Error
 
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -1184,7 +1198,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -1192,14 +1206,12 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
 }
 ```
-
----
 
 ## 19. POST /ndt/simulation_completed
 
@@ -1209,8 +1221,8 @@ Called by the external simulator when a simulation finishes. The server will for
 
 ### Request
 * Method: **POST**
-* **Content-Type:** `application/json`
-* **Body Parameters:**
+* Content-Type: **application/json**
+* Body Parameters:
 
   | Field        | Type   | Description                                                   |
   | ------------ | ------ | ------------------------------------------------------------- |
@@ -1230,18 +1242,16 @@ Called by the external simulator when a simulation finishes. The server will for
 
 #### Success
 
-* **Status:** `200 OK`
-* **Body:**
-
-  ```json
-  {
-    "status": "result forwarded"
-  }
-  ```
+* Status: **200 OK**
+```json
+{
+  "status": "result forwarded"
+}
+```
 
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -1249,7 +1259,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -1257,7 +1267,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -1266,16 +1276,11 @@ Returned when an unknown exception type is thrown.
 
 
 ## 20.GET /ndt/get_nickname
-
------
-
 ### Description
 
 Retrieves the **nickname** of a single device from the network topology. The device must be identified by one of the query parameters: `dpid`, `mac`, or `name`.
 
 If multiple parameters are provided, they are processed in the following order of priority: **`dpid` \> `mac` \> `name`**. For example, if both `dpid` and `mac` are in the URL, the system will only search for the device by its `dpid`.
-
------
 
 ### Request
 * Method: **GET**
@@ -1296,39 +1301,19 @@ If multiple parameters are provided, they are processed in the following order o
       * To get by MAC address:
         `/api/device/nickname?mac=00:1A:2B:3C:4D:5E`
 
------
-
 ### Response
 
 #### Success 
-
-  * **Status**: `200 OK`
-
-  * **Body**: A JSON object containing the nickname of the found device.
-
-    ```json
-    {
-      "nickname": "Main-Web-Server"
-    }
-    ```
+* Status**: **200 OK**
+```json
+{
+  "nickname": "Main-Web-Server"
+}
+```
 
 #### Error 
-Returned when a valid identifier is provided, but no matching device is found in the topology.
-* **Status: 404 Not Found**
-```json
-{
-  "error": "Device not found"
-}
-```
-Returned if no identifier parameter (`dpid`, `mac`, or `name`) is provided in the URL.
-* **Status: 404 Not Found**
-```json
-{
-  "error": "Missing dpid, mac, or name parameter"
-}
-```
 Returned if an identifier has an invalid format (e.g., a non-numeric DPID).
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "Invalid DPID format",
@@ -1336,15 +1321,29 @@ Returned if an identifier has an invalid format (e.g., a non-numeric DPID).
 }
 ```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
   "details": "<exception message>"
 }
 ```
+Returned when a valid identifier is provided, but no matching device is found in the topology.
+* Status: **404 Not Found**
+```json
+{
+  "error": "Device not found"
+}
+```
+Returned if no identifier parameter (`dpid`, `mac`, or `name`) is provided in the URL.
+* Status: **404 Not Found**
+```json
+{
+  "error": "Missing dpid, mac, or name parameter"
+}
+```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -1352,7 +1351,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -1360,20 +1359,15 @@ Returned when an unknown exception type is thrown.
 ```
 
 ## 21. POST /ndt/modify_nickname
-
------
-
 ### Description
 
 Updates the nickname of a device (e.g., a switch or host) in the network topology. The device can be identified by its **DPID**, **MAC address**, or its current **name**(e.g., name or nickname).
 
------
-
 ### Request
 * Method: **POST**
-  * **Content-Type**: `application/json`
+* Content-Type: **application/json**
 
-  * **Body Parameters**:
+* Body Parameters:
 
 | Field | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
@@ -1417,46 +1411,38 @@ Updates the nickname of a device (e.g., a switch or host) in the network topolog
     }
     ```
 
------
-
 ### Response
 
 #### Success 
 
-  * **Status**: `200 OK`
-  * **Body**
-    ```json
-    {
-      "status": "success",
-      "message": "Nickname updated successfully."
-    }
-    ```
+* Status: **200 OK**
+```json
+{
+  "status": "success",
+  "message": "Nickname updated successfully."
+}
+```
 
 #### Error 
 
-  * **Status**: `404 Not Found`
-
-    ```json
-    {
-      "error": "Device not found"
-    }
-    ```
-
-  * **Status**: `400 Bad Request`
-
-    > This error is returned for invalid request formats, such as malformed JSON, missing required fields, or an invalid identifier type.
-
-    ```json
-    {
-      "error": "Failed to modify nickname",
-      "details": "Invalid identifier type: ip"
-    }
-    ```
------
+* Status: **404 Not Found**
+```json
+{
+  "error": "Device not found"
+}
+```
+This error is returned for invalid request formats, such as malformed JSON, missing required fields, or an invalid identifier type.
+* Status: **400 Bad Request**
+```json
+{
+  "error": "Failed to modify nickname",
+  "details": "Invalid identifier type: ip"
+}
+```
 
 ## 22. GET /ndt/get_temperature
 
-**Description**
+### Description
 
 Retrieves the current operating temperature for all switches in the network topology.
 
@@ -1465,26 +1451,16 @@ This function is designed to work in two modes:
   * In a **Mininet** environment, it returns randomly generated dummy data for any switch.
   * In a **Testbed** environment, it uses SNMP to query the temperature. It will only return a valid temperature for devices with a `brand_name` of "HPE 5520". For other devices or switches that are down, it returns a descriptive status message.
 
------
-
 ### Request
 * Method: **GET**
-
-**Example URL:**
-
-```
-/ndt/get_temperature
-```
-
------
 
 ### Response
 
 #### Success 
 
-**Status**: `200 OK`
+* Status: **200 OK**
 
-**Body**: A JSON object where each key is a switch's IP address. The value is either the current temperature in Celsius (as an integer) or a status message (as a string).
+A JSON object where each key is a switch's IP address. The value is either the current temperature in Celsius (as an integer) or a status message (as a string).
 
 ```json
 {
@@ -1494,17 +1470,33 @@ This function is designed to work in two modes:
 }
 ```
 
------
-
 #### Error 
 
-No specific error responses are defined for this endpoint. The status of each individual switch (e.g., if it's down or unsupported) is reported within the body of a `200 OK` success response, as shown above. Any critical server-side failure would result in a standard `500 Internal Server Error`.
-
------
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* Status: **400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
 ## 23. GET /ndt/get_path_switch_count
-
------
 
 ### Description
 
@@ -1512,8 +1504,6 @@ Retrieves the number of switches along network paths.
 
   * If a **source IP** and **destination IP** are specified, it returns the switch count for that single path.
   * If no IP addresses are specified, it returns a list of all known paths and their corresponding switch counts.
-
------
 
 ### Request
 * Method: **GET**
@@ -1530,61 +1520,78 @@ Retrieves the number of switches along network paths.
       * **For all paths (empty query)**:
         `/ndt/get_path_switch_count`
 
------
-
 ### Response
 
-#### Success (Specific Path) 
+#### Success
+* Status: **200 OK**
 
-  * **Status**: `200 OK`
+A JSON object confirming the request and providing the count of switches on the specified path.
 
-  * **Body**: A JSON object confirming the request and providing the count of switches on the specified path.
+```json
+{
+  "status": "success",
+  "src_ip": "10.0.0.1",
+  "dst_ip": "10.0.0.2",
+  "switch_count": 1
+}
+```
 
-    ```json
+#### Success 
+
+* Status: **200 OK**
+
+A JSON object containing a `data` array with all known paths and their switch counts. The array will be empty if no paths are currently known.
+
+```json
+{
+  "status": "success",
+  "data": [
     {
-      "status": "success",
       "src_ip": "10.0.0.1",
       "dst_ip": "10.0.0.2",
       "switch_count": 1
-    }
-    ```
-
-#### Success (All Paths) 
-
-  * **Status**: `200 OK`
-
-  * **Body**: A JSON object containing a `data` array with all known paths and their switch counts. The array will be empty if no paths are currently known.
-
-    ```json
+    },
     {
-      "status": "success",
-      "data": [
-        {
-          "src_ip": "10.0.0.1",
-          "dst_ip": "10.0.0.2",
-          "switch_count": 1
-        },
-        {
-          "src_ip": "10.0.0.3",
-          "dst_ip": "10.0.0.4",
-          "switch_count": 2
-        }
-      ]
+      "src_ip": "10.0.0.3",
+      "dst_ip": "10.0.0.4",
+      "switch_count": 2
     }
-    ```
+  ]
+}
+```
 
 #### Error 
-
-  * **Status**: `404 Not Found`
-
-    > This error is returned **only when requesting a specific path** that cannot be found in the system's records.
-
-    ```json
-    {
-      "status": "error",
-      "message": "Path not found for the given IPs."
-    }
-    ```
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* Status: **400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+This error is returned **only when requesting a specific path** that cannot be found in the system's records.
+* Status: **404 Not Found**
+```json
+{
+  "status": "error",
+  "message": "Path not found for the given IPs."
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
 ## 24. POST /ndt/install_flow_entries_modify_flow_entries_and_delete_flow_entries
 
@@ -1594,8 +1601,8 @@ Installs, modifies and deletes OpenFlow entries in one request. For each install
 
 ### Request
 * Method: **POST**
-* **Content-Type:** `application/json`
-* **Body Parameters:**
+* Content-Type: **application/json**
+* Body Parameters:
 
   | Field        | Type   | Description                                                   |
   | ------------ | ------ | ------------------------------------------------------------- |
@@ -1703,13 +1710,12 @@ Installs, modifies and deletes OpenFlow entries in one request. For each install
 #### Success
 
 * Status: **200 OK**
-* **Body:**
 
-  ```json
-  {
-    "status": "Flows installed, modified and deleted"
-  }
-  ```
+```json
+{
+  "status": "Flows installed, modified and deleted"
+}
+```
 
 #### Error
 
@@ -1720,18 +1726,42 @@ Installs, modifies and deletes OpenFlow entries in one request. For each install
     "error": "install_flow_entries/modify_flow_entries/delete_flow_entries must be arrays"
   }
   ```
+* Status: **400 Bad Request**
   ```json
   {
     "error": "Bad entry"
   }
   ```
-* **Status: 500 Internal Server Error**
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* Status: **400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+* Status: **500 Internal Server Error**
 
   ```json
   {
     "error": "internal server error"
   }
   ```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
 
 ## 25. POST /ndt/install_group_entry
 ### Description
@@ -1764,16 +1794,27 @@ The API constructs and sends a **groupentry/add** POST request to Ryu.
 }
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
 * Status: **400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 500 Internal Server Error**
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -1805,16 +1846,27 @@ The API constructs and sends a **groupentry/delete** POST request to Ryu.
 }
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
 * Status: **400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 500 Internal Server Error**
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -1848,16 +1900,27 @@ The API constructs and sends a **groupentry/modify** POST request to Ryu.
 }
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
 * Status: **400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 500 Internal Server Error**
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -1891,16 +1954,27 @@ The API constructs and sends a **meterentry/add** POST request to Ryu.
 }
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
 * Status: **400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 500 Internal Server Error**
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -1930,16 +2004,27 @@ The API constructs and sends a **meterentry/delete** POST request to Ryu.
 }
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
 * Status: **400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 500 Internal Server Error**
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -1973,16 +2058,27 @@ The API constructs and sends a **meterentry/modify** POST request to Ryu.
 }
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
 * Status: **400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 500 Internal Server Error**
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -2049,16 +2145,27 @@ The API constructs and sends a **meterentry/modify** POST request to Ryu.
 }
 ```
 #### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
 * Status: **400 Bad Request**
 ```json
 {
-  "error": "<error message>"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
 }
 ```
-* **Status: 500 Internal Server Error**
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
 ```json
 {
-  "error": "internal server error"
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -2092,11 +2199,34 @@ The state is set by passing the query parameter state with value enable or disab
   "error": "Invalid or missing 'state' parameter. Use 'enable' or 'disable'."
 }
 ```
-* **Status: 500 Internal Server Error**
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* Status: **400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+* Status: **500 Internal Server Error**
 ```json
 {
   "status": "error",
   "message": "Historical data manager not available."
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -2122,10 +2252,27 @@ Only links with non-zero link_bandwidth_usage_bps are included in the average.
 ```
 
 #### Error
-* **Status: 500 Internal Server Error**
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* Status: **400 Bad Request**
 ```json
 {
-  "error": "internal server error"
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
 }
 ```
 
@@ -2157,7 +2304,7 @@ It sums link_bandwidth_usage_bps for all edges whose destination DPID equals the
 
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -2165,7 +2312,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -2173,7 +2320,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -2210,7 +2357,7 @@ edges it will be counted multiple times (no global deduplication).
 
 #### Error
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
@@ -2218,7 +2365,7 @@ Returned when the request body is not valid JSON, or JSON fields have invalid ty
 }
 ```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -2226,7 +2373,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -2264,24 +2411,24 @@ Supports optional type and ttl (seconds). If the JSON body is missing/invalid, d
 ```
 
 #### Error
-Busy / Invalid Type
-* **Status: 423 Locked**
-```json
-{
-  "error": "Lock acquisition failed",
-  "detail": "System busy or invalid lock type: routing_lock"
-}
-```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
   "details": "<exception message>"
 }
 ```
+Busy / Invalid Type
+* Status: **423 Locked**
+```json
+{
+  "error": "Lock acquisition failed",
+  "detail": "System busy or invalid lock type: routing_lock"
+}
+```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -2289,7 +2436,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -2324,24 +2471,24 @@ Supports optional type and ttl. If missing/invalid JSON, defaults are used.
 ```
 
 #### Error
-Not Held / Expired / Invalid
-* **Status: 412 Precondition Failed**
-```json
-{
-  "error": "Renew failed",
-  "detail": "Lock 'routing_lock' is expired, not held, or invalid type"
-}
-```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
   "details": "<exception message>"
 }
 ```
+Not Held / Expired / Invalid
+* Status: **412 Precondition Failed**
+```json
+{
+  "error": "Renew failed",
+  "detail": "Lock 'routing_lock' is expired, not held, or invalid type"
+}
+```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -2349,7 +2496,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"
@@ -2382,24 +2529,24 @@ Supports optional type. If missing/invalid JSON, the default lock type is used.
 ```
 
 #### Error
-Busy / Invalid Type
-* **Status: 423 Locked**
-```json
-{
-  "error": "Lock release failed", 
-  "detail": "..."
-}
-```
 Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
-* **Status: 400 Bad Request**
+* Status: **400 Bad Request**
 ```json
 {
   "error": "JSON parsing error",
   "details": "<exception message>"
 }
 ```
+Busy / Invalid Type
+* Status: **423 Locked**
+```json
+{
+  "error": "Lock release failed", 
+  "detail": "..."
+}
+```
 Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "Internal server error",
@@ -2407,7 +2554,7 @@ Returned when an unexpected runtime error occurs (e.g., invalid state, missing d
 }
 ```
 Returned when an unknown exception type is thrown.
-* **Status: 500 Internal Server Error**
+* Status: **500 Internal Server Error**
 ```json
 {
   "error": "An unknown error occurred"

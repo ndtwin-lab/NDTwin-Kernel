@@ -750,11 +750,6 @@ makeInstallJob(const nlohmann::json& entry)
     j.actions = entry.value("actions", nlohmann::json::array());
     j.idleTimeout = entry.value("idle_timeout", 0);
 
-    auto cidr = utils::parseIpv4Cidr(j.match.at("ipv4_dst").get<std::string>());
-    j.dstIpU32 = cidr.ip;
-    j.dstMaskU32 = cidr.mask;
-    j.dstPrefixLen = cidr.prefix;
-
     return j;
 }
 
@@ -768,11 +763,6 @@ makeModifyJob(const nlohmann::json& entry)
     j.match = entry.value("match", nlohmann::json::object());
     j.actions = entry.value("actions", nlohmann::json::array());
 
-    auto cidr = utils::parseIpv4Cidr(j.match.at("ipv4_dst").get<std::string>());
-    j.dstIpU32 = cidr.ip;
-    j.dstMaskU32 = cidr.mask;
-    j.dstPrefixLen = cidr.prefix;
-
     return j;
 }
 
@@ -784,11 +774,6 @@ makeDeleteJob(const nlohmann::json& entry)
     j.op = FlowOp::Delete;
     j.priority = entry.value("priority", -1);
     j.match = entry.value("match", nlohmann::json::object());
-
-    auto cidr = utils::parseIpv4Cidr(j.match.at("ipv4_dst").get<std::string>());
-    j.dstIpU32 = cidr.ip;
-    j.dstMaskU32 = cidr.mask;
-    j.dstPrefixLen = cidr.prefix;
 
     return j;
 }
@@ -850,107 +835,8 @@ HttpSession::processFlowBatch(const json& j, http::response<http::string_body>& 
     // TODO: Immediately update the table
     m_deviceConfigurationAndPowerManager->updateOpenFlowTables(j);
 
-    auto addAffected = [&](const json& entry, const char* tag) -> bool {
-        try
-        {
-            json match = entry.value("match", json::object());
-
-            if (!match.contains("ipv4_dst"))
-            {
-                throw std::invalid_argument("match.ipv4_dst missing");
-            }
-
-            const std::string dstStr = match.at("ipv4_dst").get<std::string>();
-            auto cidr = utils::parseIpv4Cidr(dstStr); // ip/mask/network in host-order
-
-            const uint32_t net = cidr.network;
-            const uint32_t mask = cidr.mask;
-
-            std::vector<uint32_t> hostIpList = m_flowLinkUsageCollector->getAllHostIps();
-
-            // Find all destination hosts that match ipv4_dst (host or subnet)
-            std::vector<uint32_t> dstHosts;
-            dstHosts.reserve(hostIpList.size());
-            for (uint32_t h : hostIpList)
-            {
-                if ((h & mask) == net)
-                {
-                    dstHosts.push_back(h);
-                }
-            }
-
-            // Build affected (src, dst) pairs (skip src==dst)
-            std::vector<std::pair<uint32_t, uint32_t>> affectedFlows;
-            affectedFlows.reserve(hostIpList.size() * dstHosts.size());
-
-            for (uint32_t src : hostIpList)
-            {
-                for (uint32_t dst : dstHosts)
-                {
-                    if (src != dst)
-                    {
-                        affectedFlows.emplace_back(src, dst);
-                    }
-                }
-            }
-
-            // For subnet, "a single dst" doesn't exist, so store network as a key.
-            uint32_t dstKey = (cidr.prefix == 32) ? cidr.ip : cidr.network;
-
-            affectedFlowsAndDstIpForEachModifiedEntry.emplace_back(std::move(affectedFlows),
-                                                                   dstKey);
-            return true;
-        }
-        catch (const std::exception& e)
-        {
-            SPDLOG_LOGGER_ERROR(Logger::instance(),
-                                "[{}] bad entry: {} ; error={}",
-                                tag,
-                                entry.dump(),
-                                e.what());
-            res.result(http::status::bad_request);
-            res.body() = R"({"error":"Bad entry"})";
-            return false;
-        }
-    };
-
-    for (const auto& e : ins)
-    {
-        if (!addAffected(e, "INS"))
-        {
-            return;
-        }
-    }
-    for (const auto& e : mods)
-    {
-        if (!addAffected(e, "MOD"))
-        {
-            return;
-        }
-    }
-    for (const auto& e : dels)
-    {
-        if (!addAffected(e, "DEL"))
-        {
-            return;
-        }
-    }
 
     res.body() = R"({"status":"Flows installed, modified and deleted"})";
-
-    auto payload = std::move(affectedFlowsAndDstIpForEachModifiedEntry);
-    after_write_ = [collector = m_flowLinkUsageCollector, payload = std::move(payload)]() mutable {
-        try
-        {
-            collector->updateAllPathMapAfterModOpenflowEntries(payload);
-        }
-        catch (const std::exception& e)
-        {
-            SPDLOG_LOGGER_ERROR(Logger::instance(),
-                                "updateAllPathMapAfterModOpenflowEntries failed: {}",
-                                e.what());
-        }
-    };
 }
 
 void

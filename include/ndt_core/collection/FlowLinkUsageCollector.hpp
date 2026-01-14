@@ -147,31 +147,6 @@ class FlowLinkUsageCollector
      */
     std::vector<uint32_t> getAllHostIps();
     void printAllPathMap();
-    /**
-     * @brief Refresh affected (src,dst)->Path entries after a routing change for a destination.
-     *
-     * Called after modifying OpenFlow entries or other routing rules that change the
-     * path to a specific destination. This method updates internal path records for
-     * the affected flows.
-     *
-     * @param affectedFlows List of (srcIp,dstIp) pairs that are impacted.
-     * @param dstIp         Destination IP whose routing was modified.
-     */
-    void updateAllPathMapAfterModOpenflowEntry(
-        std::vector<std::pair<uint32_t, uint32_t>> affectedFlows,
-        uint32_t dstIp);
-    /**
-     * @brief Refresh of paths after multiple routing entries are modified.
-     *
-     * Each entry contains:
-     *  - a list of affected (srcIp,dstIp) flow pairs
-     *  - the destination IP associated with the modified entry
-     *
-     * @param affectedFlowsAndDstIpForEachModifiedEntry Batch update specification.
-     */
-    void updateAllPathMapAfterModOpenflowEntries(
-        std::vector<std::pair<std::vector<std::pair<uint32_t, uint32_t>>, uint32_t>>
-            affectedFlowsAndDstIpForEachModifiedEntry);
 
     /**
      * @brief Get the number of switches on the path between a (src,dst) pair.

@@ -198,63 +198,6 @@ maskToPrefixHost(uint32_t mask)
 }
 
 /**
- * @brief Parse an IPv4 string that may optionally include a CIDR prefix.
- *
- * Accepts either:
- *   - "A.B.C.D"        (treated as /32)
- *   - "A.B.C.D/prefix" (prefix in [0, 32])
- *
- * Returned values are in host byte order. The function uses utils::ipStringToUint32()
- * to parse the dotted IPv4 address portion.
- *
- * @param s IPv4 string, with optional "/prefix".
- * @return Ipv4Cidr Parsed CIDR info (ip, prefix, mask, network).
- *
- * @throws std::invalid_argument if:
- *   - the prefix is missing/invalid/out of range, or
- *   - the IPv4 address portion is invalid (propagated from ipStringToUint32()).
- *
- * Example:
- *   parseIpv4Cidr("10.0.0.1/24") => network=10.0.0.0, mask=255.255.255.0
- *   parseIpv4Cidr("10.0.0.1")    => prefix=32, mask=255.255.255.255
- */
-inline Ipv4Cidr
-parseIpv4Cidr(const std::string& s)
-{
-    auto slash = s.find('/');
-    std::string ipPart = (slash == std::string::npos) ? s : s.substr(0, slash);
-    std::string suf = (slash == std::string::npos) ? "" : s.substr(slash + 1);
-
-    uint32_t ip = utils::ipStringToUint32(ipPart); // host-order
-
-    uint8_t prefix = 32;
-    uint32_t mask = 0xFFFFFFFFu;
-
-    if (!suf.empty())
-    {
-        if (suf.find('.') != std::string::npos)
-        {
-            mask = utils::ipStringToUint32(suf); // host-order mask (e.g. 0x00FFFFFF)
-            prefix = maskToPrefixHost(mask);
-        }
-        else
-        {
-            int p = std::stoi(suf);
-            if (p < 0 || p > 32)
-            {
-                throw std::runtime_error("bad ipv4 prefix");
-            }
-            prefix = static_cast<uint8_t>(p);
-            mask = prefixToMaskHost(prefix);
-        }
-    }
-
-    uint32_t network = ip & mask;
-
-    return Ipv4Cidr{.ip = ip, .prefix = prefix, .mask = mask, .network = network};
-}
-
-/**
  * @brief Parse a vector of dotted IPv4 strings into uint32_t addresses.
  *
  * @return IPv4 addresses in network byte order.

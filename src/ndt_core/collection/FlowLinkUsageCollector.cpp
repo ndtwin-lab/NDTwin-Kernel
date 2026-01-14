@@ -304,6 +304,7 @@ FlowLinkUsageCollector::start()
     m_testCalAvgFlowSendingRatesRandomly =
         thread(&FlowLinkUsageCollector::testCalAvgFlowSendingRatesRandomly, this);
     m_purgeThread = thread(&FlowLinkUsageCollector::purgeIdleFlows, this);
+    // TODO
     m_calFlowPathByQueried = thread(&FlowLinkUsageCollector::calFlowPathByQueried, this);
 }
 
@@ -492,7 +493,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
             uint32_t baseOffset = (sampleType == 2) ? 4 : 5;
             const char* vendor = (sampleType == 2) ? "Brocade" : "HPE";
 
-            SPDLOG_LOGGER_TRACE(Logger::instance(),
+            SPDLOG_LOGGER_INFO(Logger::instance(),
                                 "============{} Counter Sample ==============",
                                 vendor);
 
@@ -529,7 +530,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                                ntohl(data[index + baseOffset + 18]);
             }
 
-            SPDLOG_LOGGER_TRACE(Logger::instance(),
+            SPDLOG_LOGGER_INFO(Logger::instance(),
                                 "COUNTER SAMPLE {} from Agent {}: ifIndex={}, ifSpeed={}, "
                                 "ifInOctets={}, ifOutOctets={}",
                                 sampleType,
@@ -1464,191 +1465,6 @@ popcount32(uint32_t x)
     }
     return c;
 #endif
-}
-
-void
-FlowLinkUsageCollector::updateAllPathMapAfterModOpenflowEntries(
-    std::vector<std::pair<std::vector<std::pair<uint32_t, uint32_t>>, uint32_t>>
-        affectedFlowsAndDstIpForEachModifiedEntry)
-{
-    // Sleep for a while to get updated openflow table
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    if (m_deviceConfigurationAndPowerManager == nullptr)
-    {
-        SPDLOG_LOGGER_WARN(Logger::instance(), "null pointer");
-    }
-
-    std::unordered_map<uint64_t, std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>>>
-        openflowTables = m_deviceConfigurationAndPowerManager->getOpenFlowTable();
-
-    // Make sure table is not empty, otherwise, refetch
-    for (const auto& [dpid, swTable] : openflowTables)
-    {
-        if (swTable.empty())
-        {
-            SPDLOG_LOGGER_WARN(Logger::instance(), "Switch {} has empty table.", dpid);
-
-            while (true)
-            {
-                SPDLOG_LOGGER_WARN(Logger::instance(), "Refetch flow table on {}", dpid);
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-
-                auto one = m_deviceConfigurationAndPowerManager->getOpenFlowTable(dpid);
-                auto itOne = one.find(dpid);
-                if (itOne != one.end() && !itOne->second.empty())
-                {
-                    openflowTables[dpid] = itOne->second;
-                    break;
-                }
-            }
-        }
-    }
-
-    auto graph = m_topologyAndFlowMonitor->getGraph();
-
-    auto pickOutPort = [&](uint64_t dpid, uint32_t dstIp) -> uint32_t {
-        uint32_t bestOut = 0;
-        uint32_t bestPrio = 0;
-        uint32_t bestMaskBits = 0;
-        bool found = false;
-
-        auto it = openflowTables.find(dpid);
-        if (it == openflowTables.end())
-        {
-            return 0;
-        }
-
-        for (const Rule& r : it->second)
-        {
-            const uint32_t net = std::get<0>(r);
-            const uint32_t mask = std::get<1>(r);
-            const uint32_t out = std::get<2>(r);
-            const uint32_t prio = std::get<3>(r);
-
-            // match: (dstIp & mask) == net
-            if ((dstIp & mask) == net)
-            {
-                // OpenFlow uses priority; for ties, prefer more specific mask (optional)
-                const uint32_t maskBits = popcount32(mask);
-
-                if (!found || prio > bestPrio || (prio == bestPrio && maskBits > bestMaskBits))
-                {
-                    found = true;
-                    bestPrio = prio;
-                    bestMaskBits = maskBits;
-                    bestOut = out;
-                }
-            }
-        }
-        return bestOut;
-    };
-
-    for (const auto& [affectedFlows, _unusedKey] : affectedFlowsAndDstIpForEachModifiedEntry)
-    {
-        for (const auto& flow : affectedFlows)
-        {
-            const uint32_t srcHostIp = flow.first;
-            const uint32_t dstHostIp = flow.second;
-
-            // Validate dst host exists in graph
-            auto vdst = m_topologyAndFlowMonitor->findVertexByIp(dstHostIp);
-            if (!vdst)
-            {
-                SPDLOG_LOGGER_INFO(Logger::instance(),
-                                   "dst {} not found in graph",
-                                   utils::ipToString(dstHostIp));
-                continue;
-            }
-
-            if (graph[*vdst].vertexType != VertexType::HOST)
-            {
-                continue;
-            }
-
-            auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByHostIp(srcHostIp);
-            if (!edgeOpt.has_value())
-            {
-                SPDLOG_LOGGER_WARN(Logger::instance(), "src host edge not found {}", srcHostIp);
-                setAllPath(flow, {});
-                continue;
-            }
-
-            auto srcSwitch = boost::target(*edgeOpt, graph);
-            int hopCount = 0;
-            sflow::Path path;
-
-            // host -> first switch
-            path.emplace_back(srcHostIp, graph[*edgeOpt].dstInterface);
-
-            while (graph[srcSwitch].dpid != 0)
-            {
-                uint64_t dpid = graph[srcSwitch].dpid;
-
-                uint32_t outPort = pickOutPort(dpid, dstHostIp);
-                if (outPort == 0)
-                {
-                    // No matching rule found
-                    SPDLOG_LOGGER_WARN(Logger::instance(),
-                                       "No rule match at dpid {} for dst {}",
-                                       dpid,
-                                       utils::ipToString(dstHostIp));
-                    path = {};
-                    break;
-                }
-
-                path.emplace_back(dpid, outPort);
-
-                auto edgeOpt2 = m_topologyAndFlowMonitor->findEdgeByDpidAndPort({dpid, outPort});
-                if (!edgeOpt2)
-                {
-                    path = {};
-                    break;
-                }
-                srcSwitch = boost::target(*edgeOpt2, graph);
-
-                if (hopCount++ > 100)
-                {
-                    SPDLOG_LOGGER_WARN(Logger::instance(), "Exceed max hop count");
-                    path = {};
-                    break;
-                }
-            }
-
-            // Reachability check must also use dstHostIp (NOT the old outer dstIp)
-            if (!path.empty())
-            {
-                uint64_t dstSwitchDpid = path.back().first;
-                uint32_t dstSwitchOutPort = path.back().second;
-
-                auto lastEdge = m_topologyAndFlowMonitor->findEdgeByDpidAndPort(
-                    {dstSwitchDpid, dstSwitchOutPort});
-
-                if (lastEdge.has_value())
-                {
-                    auto connectedVertex = boost::target(*lastEdge, graph);
-                    auto ipVector = graph[connectedVertex].ip;
-
-                    if (std::find(ipVector.begin(), ipVector.end(), dstHostIp) != ipVector.end())
-                    {
-                        path.emplace_back(dstHostIp, 0);
-                    }
-                    else
-                    {
-                        path = {};
-                    }
-                }
-                else
-                {
-                    path = {};
-                }
-            }
-
-            setAllPath(flow, path);
-        }
-    }
-
-    // printAllPathMap();
-    return;
 }
 
 std::optional<size_t>
