@@ -142,27 +142,6 @@ ipStringToUint32(const std::string& ipStr)
     return addr.s_addr;
 }
 
-/**
- * @brief Representation of an IPv4 address in CIDR form.
- *
- * All fields are stored in host byte order.
- *
- * - ip:      the IPv4 address part (A.B.C.D)
- * - prefix:  prefix length in bits, range [0, 32]
- * - mask:    subnet mask derived from prefix (e.g., /24 -> 255.255.255.0)
- * - network: network address computed as (ip & mask)
- *
- * Example:
- *   "20.0.0.1/24" -> ip=20.0.0.1, prefix=24, mask=255.255.255.0, network=20.0.0.0
- */
-struct Ipv4Cidr
-{
-    uint32_t ip;      // host-order
-    uint8_t prefix;   // 0..32
-    uint32_t mask;    // host-order
-    uint32_t network; // ip & mask (host-order)
-};
-
 inline static uint32_t
 prefixToMaskHost(uint8_t p)
 {

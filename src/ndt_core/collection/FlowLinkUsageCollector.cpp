@@ -493,7 +493,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
             uint32_t baseOffset = (sampleType == 2) ? 4 : 5;
             const char* vendor = (sampleType == 2) ? "Brocade" : "HPE";
 
-            SPDLOG_LOGGER_INFO(Logger::instance(),
+            SPDLOG_LOGGER_TRACE(Logger::instance(),
                                 "============{} Counter Sample ==============",
                                 vendor);
 
@@ -530,7 +530,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                                ntohl(data[index + baseOffset + 18]);
             }
 
-            SPDLOG_LOGGER_INFO(Logger::instance(),
+            SPDLOG_LOGGER_TRACE(Logger::instance(),
                                 "COUNTER SAMPLE {} from Agent {}: ifIndex={}, ifSpeed={}, "
                                 "ifInOctets={}, ifOutOctets={}",
                                 sampleType,
@@ -636,6 +636,8 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
             uint32_t flowDataLength = 0;
             uint32_t samplingRate = ntohl(data[index + 4]);
 
+            uint16_t etherType = 0;
+
             bool isAckPacket = false;
             const uint8_t TCP_ACK_FLAG = 0x10;
 
@@ -651,6 +653,26 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                     index += flowDataLength / 4 + 2;
                 }
                 frameLength = ntohl(data[index + 13]);
+
+                etherType = ntohl(data[index + 19]) >> 16 & 0xFFFF;
+
+                SPDLOG_LOGGER_TRACE(Logger::instance(), "etherType = 0x{:04x}", etherType);
+                if (etherType != 0x0800)
+                {
+                    SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                        "Not IPv4 packet, etherType {}",
+                                        etherType);
+                    if (m_mode == utils::MININET)
+                    {
+                        index += (sampleLen / 4 + 2 - (flowDataLength / 4 + 2));
+                    }
+                    else
+                    {
+                        index += (sampleLen / 4 + 2);
+                    }
+                    continue;
+                }
+
                 protocol = ntohl(data[index + 21]) & 0xFF;
                 srcIp = ipFromFrontBack(ntohl(data[index + 22]), ntohl(data[index + 23]));
                 dstIp = ipFromFrontBack(ntohl(data[index + 23]), ntohl(data[index + 24]));
@@ -680,6 +702,26 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                 inputPort = ntohl(data[index + 9]);
                 outputPort = ntohl(data[index + 11]);
                 frameLength = ntohl(data[index + 12 + 4]);
+
+                etherType = ntohl(data[index + 12 + 6 + 5]) >> 16 & 0xFFFF;
+
+                SPDLOG_LOGGER_TRACE(Logger::instance(), "etherType = 0x{:04x}", etherType);
+                if (etherType != 0x0800)
+                {
+                    SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                        "Not IPv4 packet, etherType {}",
+                                        etherType);
+                    if (m_mode == utils::MININET)
+                    {
+                        index += (sampleLen / 4 + 2 - (flowDataLength / 4 + 2));
+                    }
+                    else
+                    {
+                        index += (sampleLen / 4 + 2);
+                    }
+                    continue;
+                }
+
                 protocol = ntohl(data[index + 12 + 6 + 7]) & 0xFF;
                 srcIp = ipFromFrontBack(ntohl(data[index + 12 + 6 + 7 + 1]),
                                         ntohl(data[index + 12 + 6 + 7 + 2]));
@@ -706,20 +748,23 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                 }
             }
 
-            SPDLOG_LOGGER_TRACE(
-                Logger::instance(),
-                "FLOW SAMPLE from Agent {}: {} -> {} (Proto: {}, Len: {}, Input "
-                "port: {}, Ouput port: {} ICMP type {} ICMP code {}, Sampling rate {})",
-                agentIpStr,
-                utils::ipToString(srcIp),
-                utils::ipToString(dstIp),
-                protocol,
-                frameLength,
-                inputPort,
-                outputPort,
-                icmpType,
-                icmpCode,
-                samplingRate);
+            if (m_mode == utils::TESTBED)
+            {
+                SPDLOG_LOGGER_TRACE(
+                    Logger::instance(),
+                    "FLOW SAMPLE from Agent {}: {} -> {} (Proto: {}, Len: {}, Input "
+                    "port: {}, Ouput port: {} ICMP type {} ICMP code {}, Sampling rate {})",
+                    agentIpStr,
+                    utils::ipToString(srcIp),
+                    utils::ipToString(dstIp),
+                    protocol,
+                    frameLength,
+                    inputPort,
+                    outputPort,
+                    icmpType,
+                    icmpCode,
+                    samplingRate);
+            }
 
             // check whether it is pure ack
             bool isPureAck = false;
@@ -1571,10 +1616,28 @@ FlowLinkUsageCollector::getPathBetweenHostsJson(const std::string& srcHostName,
 void
 FlowLinkUsageCollector::calFlowPathByQueried()
 {
-    while (m_running.load())
+    using MapT = std::remove_reference_t<decltype(m_flowInfoTable)>;
+    using FlowInfoKey = typename MapT::key_type;
+
+    while (m_running.load(std::memory_order_relaxed))
     {
-        for (const auto& [flowKey, flowInfo] : m_flowInfoTable)
+        // Snapshot keys under a shared/read lock
+        std::vector<FlowInfoKey> keys;
         {
+            std::shared_lock<std::shared_mutex> lk(m_flowInfoTableMutex);
+            keys.reserve(m_flowInfoTable.size());
+            for (const auto& kv : m_flowInfoTable)
+            {
+                keys.push_back(kv.first);
+            }
+        }
+
+        // Compute each path without holding m_flowInfoTableMutex
+        for (const auto& flowKey : keys)
+        {
+            sflow::Path path;
+            bool ok = true;
+
             ndtClassifier::FlowKey fk{};
             fk.ipProto = flowKey.protocol;
             fk.ipv4Dst = ntohl(flowKey.dstIP);
@@ -1583,49 +1646,115 @@ FlowLinkUsageCollector::calFlowPathByQueried()
             fk.tpSrc = flowKey.srcPort;
             fk.ethType = 0x0800;
 
-            auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByHostIp(flowKey.srcIP);
-            if (!edgeOpt.has_value())
+            SPDLOG_LOGGER_DEBUG(Logger::instance(),
+                                "flow {}:{} to {}:{} proto num {}",
+                                fk.ipv4Src,
+                                fk.tpSrc,
+                                fk.ipv4Dst,
+                                fk.tpDst,
+                                fk.ipProto);
+
+            if (fk.ipv4Src == 0 || fk.ipv4Dst == 0)
             {
-                SPDLOG_LOGGER_WARN(Logger::instance(), "edge not found");
-                continue;
+                ok = false;
+                SPDLOG_LOGGER_WARN(Logger::instance(), "fk.ipv4Src == 0 || fk.ipv4Dst == 0");
             }
-
-            auto edge = *edgeOpt;
-
-            sflow::Path p;
-            auto graph = m_topologyAndFlowMonitor->getGraph();
-            p.push_back(make_pair(flowKey.srcIP, graph[edge].dstInterface));
-
-            for (int hop = 0; hop < 100; ++hop)
+            else
             {
-                auto srcSw = boost::target(edge, graph);
-                if (graph[srcSw].dpid == 0)
+                auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByHostIp(flowKey.srcIP);
+                if (!edgeOpt.has_value())
                 {
-                    auto it = find(graph[srcSw].ip.begin(), graph[srcSw].ip.end(), flowKey.dstIP);
-                    if (it != graph[srcSw].ip.end())
+                    ok = false;
+                    SPDLOG_LOGGER_WARN(
+                        Logger::instance(),
+                        "edge not found flow: {} to {} protocol {} srcPort {} dstPort {}",
+                        utils::ipToString(flowKey.srcIP),
+                        utils::ipToString(flowKey.dstIP),
+                        flowKey.protocol,
+                        flowKey.srcPort,
+                        flowKey.dstPort);
+                }
+                else
+                {
+                    auto edge = *edgeOpt;
+
+                    auto graph = m_topologyAndFlowMonitor->getGraph();
+
+                    path.push_back(std::make_pair(flowKey.srcIP, graph[edge].dstInterface));
+
+                    int hop = 0;
+                    for (hop = 0; hop < 100; ++hop)
                     {
-                        p.push_back(make_pair(flowKey.dstIP, 0));
+                        auto srcSw = boost::target(edge, graph);
+
+                        // Reached host vertex?
+                        if (graph[srcSw].dpid == 0)
+                        {
+                            auto it = std::find(graph[srcSw].ip.begin(),
+                                                graph[srcSw].ip.end(),
+                                                flowKey.dstIP);
+                            if (it != graph[srcSw].ip.end())
+                            {
+                                path.push_back(std::make_pair(flowKey.dstIP, 0));
+                            }
+                            break;
+                        }
+
+                        auto effect = m_classifier->lookup(graph[srcSw].dpid, fk);
+                        if (!effect || effect->outputPorts.empty())
+                        {
+                            ok = false;
+                            break;
+                        }
+
+                        uint32_t outPort = effect->outputPorts.front();
+
+                        SPDLOG_LOGGER_DEBUG(Logger::instance(),
+                                            "effect outputPorts.size(): {} outputPorts.front() {}",
+                                            effect->outputPorts.size(),
+                                            outPort);
+
+                        path.push_back(std::make_pair(graph[srcSw].dpid, outPort));
+
+                        auto nextEdgeOpt = m_topologyAndFlowMonitor->findEdgeByDpidAndPort(
+                            std::make_pair(graph[srcSw].dpid, outPort));
+
+                        if (!nextEdgeOpt.has_value())
+                        {
+                            ok = false;
+                            SPDLOG_LOGGER_WARN(Logger::instance(),
+                                               "edge not found by dpid/port {}:{}",
+                                               graph[srcSw].dpid,
+                                               outPort);
+                            break;
+                        }
+
+                        edge = *nextEdgeOpt;
                     }
-                    break;
+
+                    if (hop >= 100)
+                    {
+                        ok = false;
+                        SPDLOG_LOGGER_WARN(Logger::instance(),
+                                           "Exceed 100 hop (potential loop) {} -> {}",
+                                           utils::ipToString(flowKey.srcIP),
+                                           utils::ipToString(flowKey.dstIP));
+                    }
                 }
-
-                auto effect = m_classifier->lookup(graph[srcSw].dpid, fk);
-                if (!effect || effect->outputPorts.empty())
-                {
-                    break;
-                }
-
-                uint32_t outPort = effect->outputPorts.front();
-                p.push_back(make_pair(graph[srcSw].dpid, outPort));
-
-                edgeOpt = m_topologyAndFlowMonitor->findEdgeByDpidAndPort(
-                    make_pair(graph[srcSw].dpid, outPort));
-                edge = *edgeOpt;
             }
 
-            m_flowInfoTable[flowKey].flowPath = p;
+            // Commit the result under unique lock (no operator[]; don’t insert)
+            {
+                std::unique_lock<std::shared_mutex> lk(m_flowInfoTableMutex);
+                auto it = m_flowInfoTable.find(flowKey);
+                if (it != m_flowInfoTable.end())
+                {
+                    it->second.flowPath = ok ? std::move(path) : sflow::Path{};
+                }
+            }
         }
-        std::this_thread::sleep_for(chrono::microseconds(1000));
+
+        std::this_thread::sleep_for(std::chrono::microseconds(1000));
     }
 }
 

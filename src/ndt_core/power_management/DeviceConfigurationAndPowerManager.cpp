@@ -1292,6 +1292,30 @@ DeviceConfigurationAndPowerManager::getOpenFlowTables()
     return m_cachedOpenFlowTables;
 }
 
+static uint32_t
+parseIpv4U32(const nlohmann::json& v)
+{
+    if (v.is_number_unsigned() || v.is_number_integer())
+    {
+        return v.get<uint32_t>(); // already numeric (define: host-order)
+    }
+
+    if (v.is_string())
+    {
+        const std::string s = v.get<std::string>();
+        in_addr a{};
+        if (inet_pton(AF_INET, s.c_str(), &a) != 1)
+        {
+            throw std::runtime_error("invalid ipv4 string: " + s);
+        }
+
+        // inet_pton gives network order; convert to host order
+        return ntohl(a.s_addr);
+    }
+
+    throw std::runtime_error("ipv4 must be number or string");
+}
+
 void
 DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
 {
@@ -1327,18 +1351,19 @@ DeviceConfigurationAndPowerManager::updateOpenFlowTables(const json& j)
         int priority = e.value("priority", 0);
         const json& match = e.at("match");
 
-        // Support 5-tuple
-        ndtClassifier::FlowKey fk = {};
+        ndtClassifier::FlowKey fk{};
         fk.ethType = match.value("eth_type", 0);
         fk.ipProto = match.value("ip_proto", 0);
-        fk.ipv4Dst = match.value("ipv4_dst", 0);
-        fk.ipv4Src = match.value("ipv4_src", 0);
 
-        if(fk.ipProto == 6) // TCP
+        fk.ipv4Dst = match.contains("ipv4_dst") ? parseIpv4U32(match.at("ipv4_dst")) : 0;
+        fk.ipv4Src = match.contains("ipv4_src") ? parseIpv4U32(match.at("ipv4_src")) : 0;
+
+        if (fk.ipProto == 6)
         {
-            fk.tpDst = match.value("tcp_dst", 0);   
+            fk.tpDst = match.value("tcp_dst", 0);
             fk.tpSrc = match.value("tcp_src", 0);
-        }else if(fk.ipProto == 17)  // UDP
+        }
+        else if (fk.ipProto == 17)
         {
             fk.tpDst = match.value("udp_dst", 0);
             fk.tpSrc = match.value("udp_src", 0);

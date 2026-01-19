@@ -877,11 +877,11 @@ parseActionsArrayIntoEffect(const nlohmann::json& actions, RuleEffect& effect)
                 portStr = toUpper(portStr);
 
                 // OpenFlow reserved ports (store as uint32_t constants)
-                constexpr uint32_t OFPP_CONTROLLER = 0xFFFFFFFDu;
-                constexpr uint32_t OFPP_LOCAL = 0xFFFFFFFEu;
-                // constexpr uint32_t OFPP_ANY = 0xFFFFFFFFu;
-                constexpr uint32_t OFPP_FLOOD = 0xFFFFFFFBu;
-                constexpr uint32_t OFPP_NORMAL = 0xFFFFFFFAu;
+                constexpr uint32_t OFPP_CONTROLLER = 65535;
+                constexpr uint32_t OFPP_LOCAL = 65535;
+                // constexpr uint32_t OFPP_ANY = 65535;
+                constexpr uint32_t OFPP_FLOOD = 65535;
+                constexpr uint32_t OFPP_NORMAL = 65535;
 
                 uint32_t port = 0;
                 if (portStr == "CONTROLLER")
