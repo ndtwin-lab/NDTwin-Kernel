@@ -62,12 +62,12 @@ add_subdirectory(src/ndt_core/intent_translator)
 add_subdirectory(src/ndt_core/http)
 
 # --- Main Executable ---
-add_executable(ndt_main src/main.cpp)
+add_executable(NDTwin_Kernel src/main.cpp)
 
 # --- Link Libraries to Main Executable ---
 # This is the crucial part. We link our internal static libraries FIRST,
 # and then we link the external libssh library that they depend on.
-target_link_libraries(ndt_main PRIVATE
+target_link_libraries(NDTwin_Kernel PRIVATE
     # Your internal libraries
     UtilsLib
     EventSystemLib
