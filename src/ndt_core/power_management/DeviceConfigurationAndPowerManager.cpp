@@ -1164,16 +1164,6 @@ DeviceConfigurationAndPowerManager::getSingleSwitchCpuReport(const std::string& 
 void
 DeviceConfigurationAndPowerManager::statusUpdateWorker()
 {
-    // Wait a few seconds on startup for topology to be stable
-    for (int i = 0; i < 5; ++i)
-    {
-        if (!m_running.load())
-        {
-            return;
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
     // Main update loop
     while (m_running.load())
     {
@@ -1214,16 +1204,6 @@ DeviceConfigurationAndPowerManager::statusUpdateWorker()
 void
 DeviceConfigurationAndPowerManager::openflowTablesUpdateWorker()
 {
-    // Wait a few seconds on startup for topology to be stable
-    for (int i = 0; i < 5; ++i)
-    {
-        if (!m_running.load())
-        {
-            return;
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
     // Main update loop
     while (m_running.load())
     {

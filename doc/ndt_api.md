@@ -1691,6 +1691,32 @@ To minimize update time, the controller uses a producer–consumer architecture:
     "delete_flow_entries": []
 }
 ```
+```json
+{
+  "install_flow_entries": [
+    {
+      "dpid": 5,
+      "match": {
+        "ip_proto": 6,
+        "eth_type": 2048,
+        "ipv4_src": "10.0.0.1/24",
+        "ipv4_dst": "10.0.0.2/24",
+        "tcp_src": 12345,
+        "tcp_dst": 443
+      },
+      "actions": [
+        {
+          "type": "OUTPUT",
+          "port": 2
+        }
+      ],
+      "priority": 201
+    }
+  ],
+  "modify_flow_entries": [],
+  "delete_flow_entries": []
+}
+```
 
 ### Response
 
