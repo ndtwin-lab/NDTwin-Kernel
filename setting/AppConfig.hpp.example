@@ -2,9 +2,9 @@
 #include <string>
 
 namespace AppConfig {
-    static const std::string TOPOLOGY_FILE = "/home/of-controller-sflow-collector/Desktop/NDTwin-Kernel/setting/StaticNetworkTopology_ipAlias4_9Switches_all_1g_cable.json";
-    static const std::string SIM_SERVER_URL = "http://10.10.10.5:9000/submit";
-    static const std::string GW_IP = "10.10.10.1";
-    static const std::string RYU_IP_AND_PORT = "10.10.10.2:6633";
-    static const std::string TOPOLOGY_FILE_MININET = "/home/of-controller-sflow-collector/Desktop/NDTwin-Kernel/setting/StaticNetworkTopology_ipAlias4_9Switches_all_1g_cable.json";
+    static const std::string TOPOLOGY_FILE = "../setting/StaticNetworkTopology_ipAlias4_9Switches_all_1g_cable.json";
+    static const std::string SIM_SERVER_URL = "http://localhost:9000/submit";
+    static const std::string GW_IP = "localhost";
+    static const std::string RYU_IP_AND_PORT = "localhost:8080";
+    static const std::string TOPOLOGY_FILE_MININET = "../setting/StaticNetworkTopologyMininet_10Switches.json";
 }

@@ -14,6 +14,31 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# whether using example file 
+set(CONFIG_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/setting/AppConfig.hpp.example")
+set(CONFIG_FILE     "${CMAKE_CURRENT_SOURCE_DIR}/setting/AppConfig.hpp")
+
+if(NOT EXISTS ${CONFIG_FILE})
+
+    if(EXISTS ${CONFIG_TEMPLATE})
+        message(STATUS "-------------------------------------------------------")
+        message(STATUS " [Config] Local config not found: ${CONFIG_FILE}")
+        message(STATUS " [Config] Creating specific config from example template...")
+        
+
+        configure_file(${CONFIG_TEMPLATE} ${CONFIG_FILE} COPYONLY)
+        
+        message(STATUS " [Config] Done. You can now edit setting/AppConfig.hpp")
+        message(STATUS "-------------------------------------------------------")
+    else()
+
+        message(WARNING " [Config] Template ${CONFIG_TEMPLATE} not found! Build may fail.")
+    endif()
+else()
+    message(STATUS " [Config] Found local config: ${CONFIG_FILE}")
+endif()
+
+
 # --- Find External Packages (at the top level) ---
 find_package(libssh REQUIRED)
 
