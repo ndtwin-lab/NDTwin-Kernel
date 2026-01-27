@@ -32,39 +32,54 @@ std::string GW_IP = AppConfig::GW_IP;
 
 static std::atomic<bool> gShutdownRequested{false};
 
+struct DeploymentConfig {
+    int mode;       
+    bool useToken;  
+};
+
 void
 handleSigint(int)
 {
     gShutdownRequested.store(true);
 }
 
-int
-promptDeploymentMode()
-{
-    int choice = -1;
+DeploymentConfig promptDeploymentConfig() {
+    DeploymentConfig config = {-1, false};
+    int aiChoice = -1;
+
     std::cout << "Select your deployment environment:\n";
     std::cout << "  [1] Local Mininet (simulated testbed)\n";
     std::cout << "  [2] Remote Testbed (physical or virtual deployment)\n";
-    std::cout << "Enter your choice (1-2): ";
-
-    while (true)
-    {
-        std::cin >> choice;
-
-        if (std::cin.fail() || choice < 1 || choice > 2)
-        {
-            std::cin.clear();                                                   // clear error flags
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // discard bad input
-            std::cout << "Invalid input. Please enter 1 or 2: ";
-        }
-        else
-        {
-            break;
-        }
+    
+    while (true) {
+        std::cout << "Enter environment choice (1-2): ";
+        std::cin >> config.mode;
+        if (!std::cin.fail() && (config.mode == 1 || config.mode == 2)) break;
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::cout << "Invalid input. ";
     }
 
-    return choice;
+    std::cout << "\nDo you want to enable Intent Translator (requires OpenAI Token)?\n";
+    std::cout << "  [1] Yes (Enable AI features)\n";
+    std::cout << "  [2] No  (Disable AI features)\n";
+
+    while (true) {
+        std::cout << "Enter choice (1-2): ";
+        std::cin >> aiChoice;
+        if (!std::cin.fail() && (aiChoice == 1 || aiChoice == 2)) {
+            config.useToken = (aiChoice == 1);
+            break;
+        }
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::cout << "Invalid input. ";
+    }
+
+    return config;
 }
+
+
 
 std::string
 promptOpenAIModel()
@@ -86,13 +101,12 @@ int
 main(int argc, char* argv[])
 {
     // Temporarily use command line prompt to configure running mode.
-    int mode = promptDeploymentMode();
-    if (mode == 1)
-    {
+    DeploymentConfig config = promptDeploymentConfig();
+    int mode = config.mode; 
+
+    if (mode == 1) {
         std::cout << "Running in Mininet environment.\n";
-    }
-    else
-    {
+    } else {
         std::cout << "Running in Remote Testbed environment.\n";
     }
 
@@ -130,12 +144,25 @@ main(int argc, char* argv[])
     flowRoutingManager =
         std::make_shared<FlowRoutingManager>(topologyAndFlowMonitor, collector, eventBus);
 
-    std::string openaiModel = promptOpenAIModel();
-    auto intentTranslator = std::make_shared<IntentTranslator>(deviceConfigurationAndPowerManager,
-                                                               topologyAndFlowMonitor,
-                                                               flowRoutingManager,
-                                                               collector,
-                                                               openaiModel);
+
+
+    std::shared_ptr<IntentTranslator> intentTranslator = nullptr;
+    if (config.useToken) {
+        std::string openaiModel = promptOpenAIModel();
+        if (openaiModel.empty()) openaiModel = "gpt-5-nano";
+
+        SPDLOG_LOGGER_INFO(Logger::instance(), "Initializing IntentTranslator with model: {}", openaiModel);
+        
+        intentTranslator = std::make_shared<IntentTranslator>(
+            deviceConfigurationAndPowerManager,
+            topologyAndFlowMonitor,
+            flowRoutingManager,
+            collector,
+            openaiModel
+        );
+    } else {
+        SPDLOG_LOGGER_INFO(Logger::instance(), "IntentTranslator is disabled by user.");
+    }
 
     auto appManager = std::make_shared<ApplicationManager>("/srv/nfs/sim", "/mnt");
 
