@@ -1068,7 +1068,7 @@ Returned when an unknown exception type is thrown.
 
 ### Description
 
-Called by NDTwin Application to notify the NDTwin server that a new simulation case has been dispatched by an external simulator and reply the response from simulation server.
+Called by NDTwin Application to notify the NDTwin server that a new simulation case has been dispatched by an external simulator and reply the response from simulation platform manager.
 
 ### Request
 * Method: **POST**
