@@ -156,8 +156,8 @@ packKey(const FlowKey& k) noexcept
     KeyBytes out;
     writeU32Be(out.bytes, 0, k.inPort);
     writeU16Be(out.bytes, 4, k.ethType);
-    out.bytes[7] = k.ipProto;
-    out.bytes[8] = 0;
+    out.bytes[6] = k.ipProto;
+    out.bytes[7] = 0;
 
     writeU32Be(out.bytes, 8, k.ipv4Src);
     writeU32Be(out.bytes, 12, k.ipv4Dst);
