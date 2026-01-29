@@ -1728,14 +1728,14 @@
             ],
             "link_bandwidth_bps": 10000000000,
             "src_dpid": 334525264577232,
-            "src_interface": 26,
+            "src_interface": 25,
             "src_ip": [
                 "10.10.10.19"
             ]
         },
         {
             "dst_dpid": 334525264577232,
-            "dst_interface": 26,
+            "dst_interface": 25,
             "dst_ip": [
                 "10.10.10.19"
             ],
@@ -1839,14 +1839,14 @@
             ],
             "link_bandwidth_bps": 10000000000,
             "src_dpid": 334525264577552,
-            "src_interface": 28,
+            "src_interface": 25,
             "src_ip": [
                 "10.10.10.21"
             ]
         },
         {
             "dst_dpid": 334525264577552,
-            "dst_interface": 28,
+            "dst_interface": 25,
             "dst_ip": [
                 "10.10.10.21"
             ],

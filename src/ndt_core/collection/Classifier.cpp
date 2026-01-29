@@ -1256,7 +1256,7 @@ Classifier::updateFromQueriedTables(const json& newTables)
         const json& flowNode = sw.at("flows");
 
         const json* flowsArray = extractFlowArray(flowNode, dpid);
-        if (!flowsArray || !flowsArray->is_array())
+        if (!flowsArray || !flowsArray->is_array() || flowsArray->empty())
         {
             continue;
         }
