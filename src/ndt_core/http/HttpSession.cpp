@@ -141,6 +141,10 @@ HttpSession::handleRequest()
         {
             handleGetDetectedFlowData(*response);
         }
+        else if (method == http::verb::get && target.starts_with("/ndt/get_detected_top_k_flow_data"))
+        {
+            handleGetDetectedTopKFlowData(*response);
+        }
         else if (method == http::verb::get && target == "/ndt/get_switch_openflow_table_entries")
         {
             handleGetSwitchOpenflowEntries(*response);
@@ -373,7 +377,6 @@ HttpSession::closeSocket()
     m_socket.shutdown(tcp::socket::shutdown_send, ec);
 }
 
-
 void
 HttpSession::handleLinkFailure(http::response<http::string_body>& res)
 {
@@ -511,6 +514,67 @@ HttpSession::handleGetDetectedFlowData(http::response<http::string_body>& res)
 {
     SPDLOG_LOGGER_INFO(Logger::instance(), "Handle Get Detected Flow Data");
     res.body() = m_flowLinkUsageCollector->getFlowInfoJson().dump();
+}
+
+void
+HttpSession::handleGetDetectedTopKFlowData(http::response<http::string_body>& res)
+{
+    SPDLOG_LOGGER_INFO(Logger::instance(), "Handle Get Detected Top-K Flow Data");
+
+    auto get_param = [](std::string_view target, std::string_view key) -> std::string {
+        auto qpos = target.find('?');
+        if (qpos == std::string_view::npos)
+        {
+            return "";
+        }
+        target.remove_prefix(qpos + 1);
+        while (!target.empty())
+        {
+            auto key_end = target.find('=');
+            if (key_end == std::string_view::npos)
+            {
+                break;
+            }
+            if (target.substr(0, key_end) == key)
+            {
+                target.remove_prefix(key_end + 1);
+                auto val_end = target.find('&');
+                return std::string(target.substr(0, val_end));
+            }
+            auto amp_pos = target.find('&');
+            if (amp_pos == std::string_view::npos)
+            {
+                break;
+            }
+            target.remove_prefix(amp_pos + 1);
+        }
+        return "";
+    };
+
+    std::string kStr = get_param(m_req.target(), "k");
+
+    int k = 50;
+
+    if (kStr != "")
+    {
+        try
+        {
+            k = std::stoi(kStr);
+        }
+        catch (...)
+        {
+            SPDLOG_LOGGER_WARN(Logger::instance(), "Invalid k value: {}", kStr);
+        }
+    }
+
+    if (k < 0)
+    {
+        k = 0;
+    }
+
+    auto j = m_flowLinkUsageCollector->getTopKFlowInfoJson(k);
+
+    res.body() = j.dump();
 }
 
 void
@@ -810,7 +874,6 @@ HttpSession::processFlowBatch(const json& j, http::response<http::string_body>& 
 
     // TODO: Immediately update the table
     m_deviceConfigurationAndPowerManager->updateOpenFlowTables(j);
-
 
     res.body() = R"({"status":"Flows installed, modified and deleted"})";
 }
@@ -1302,7 +1365,6 @@ HttpSession::handleGetPathSwitchCount(http::response<http::string_body>& res)
     std::string dstIpStr = get_param(target, "dst_ip");
     json responseJson;
     res.set(http::field::content_type, "application/json");
-
 
     // Check if BOTH src_ip and dst_ip were provided for a specific lookup.
     if (!srcIpStr.empty() && !dstIpStr.empty())

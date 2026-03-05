@@ -145,6 +145,25 @@ class HttpSession : public std::enable_shared_from_this<HttpSession>
      * @note Intended for clients such as a dashboard/GUI to query live flow visibility.
      */
     void handleGetDetectedFlowData(http::response<http::string_body>& res);
+
+    /**
+     * @brief Returns the top-K detected flows (ranked by estimated rate) as JSON.
+     *
+     * This HTTP handler queries the current flow table maintained by FlowLinkUsageCollector and
+     * returns only the top-K flows according to a ranking metric (the most recent
+     * estimated sending rate). The response body is a JSON array where each element contains
+     * the flow’s 5-tuple (src/dst IP, src/dst port, protocol), estimated sending/packet rates
+     * (periodic and immediate), first/latest sampled timestamps, and the computed path
+     * (node/interface list), consistent with handleGetDetectedFlowData().
+     *
+     * @param[out] res HTTP response whose body is set to the serialized top-K detected-flow JSON.
+     *
+     * @note Intended for dashboards/GUI clients to fetch a bounded subset of “heavy hitter” flows
+     *       to reduce payload size and query latency compared to the full flow list.
+     * @note The value of K and the ranking metric may be configured by the request (e.g., query
+     *       parameter) or by server defaults, depending on the API design.
+     */
+    void handleGetDetectedTopKFlowData(http::response<http::string_body>& res);
     /**
      * @brief Returns the cached OpenFlow flow entries for all switches as JSON.
      *

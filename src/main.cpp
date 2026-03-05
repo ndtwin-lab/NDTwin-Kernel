@@ -191,7 +191,7 @@ main(int argc, char* argv[])
                                                          mode);
 
     topologyAndFlowMonitor->start();
-    collector->start();
+    collector->start(20, 4096);
     dataManager->start();
     handler->start();
     deviceConfigurationAndPowerManager->start();

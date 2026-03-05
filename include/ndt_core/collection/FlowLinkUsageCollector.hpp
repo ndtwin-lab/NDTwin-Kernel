@@ -24,7 +24,7 @@ namespace ndtClassifier
 {
 class Classifier;
 struct FlowKey;
-}
+} // namespace ndtClassifier
 
 namespace sflow
 {
@@ -32,6 +32,10 @@ namespace sflow
 #define SFLOW_PORT 6343
 #define BUFFER_SIZE 65535
 #define FLOW_IDLE_TIMEOUT 15000 // milliseconds
+
+struct Packet; // forward declare
+template <typename T>
+class SPSCQueue; // forward declare template
 
 /**
  * @brief Collects sFlow samples and derives per-flow / per-link usage and paths.
@@ -67,14 +71,29 @@ class FlowLinkUsageCollector
     /**
      * @brief Start sFlow reception and background maintenance threads.
      *
-     * Creates/opens the UDP socket (SFLOW_PORT) and launches worker threads:
-     *  - packet receive loop
-     *  - periodic average-rate calculation
-     *  - idle-flow purge loop
-     *  - optional debug/testing tasks (if enabled)
+     * This function creates/opens a non-blocking UDP socket bound to SFLOW_PORT and
+     * launches background threads for packet processing and maintenance.
      *
+     * Threads started:
+     *  - RX thread: polls/recvmmsg() to read sFlow datagrams in batches and dispatches
+     *    them to per-worker queues (round-robin).
+     *  - Worker threads (numWorkers): parse/process packets from their assigned queues.
+     *  - Periodic maintenance: average-rate/link-usage calculation.
+     *  - Idle-flow purge: removes stale flow entries.
+     *  - Optional debug/testing tasks (if enabled).
+     *
+     * Queueing behavior:
+     *  - Per-worker queues are bounded (queueCapacity).
+     *  - The RX thread uses non-blocking enqueue (no waiting). If a target queue is full,
+     *    the datagram is dropped at the application level and a drop counter is incremented,
+     *    while the RX thread continues draining the socket to reduce kernel RX-buffer drops.
+     *
+     * @param numWorkers      Number of worker threads to spawn (defaults to hardware concurrency;
+     * at least 1).
+     * @param queueCapacity   Capacity of each per-worker queue (bounded buffering per worker).
      */
-    void start();
+    void start(size_t numWorkers = std::thread::hardware_concurrency(),
+               size_t queueCapacity = 1024);
     /**
      * @brief Stop all worker threads and close the sFlow socket.
      *
@@ -145,11 +164,12 @@ class FlowLinkUsageCollector
     void calAvgFlowSendingRatesPeriodically();
     void calAvgFlowSendingRatesImmediately();
     void testCalAvgFlowSendingRatesRandomly();
-    void run();
-    void handlePacket(char* buffer);
+    void run(size_t numWorkers, size_t queueCapacity);
+    void handlePacket(char* buffer, size_t len);
     void purgeIdleFlows();
     void fetchAllDestinationPaths();
     void calFlowPathByQueried();
+    void workerLoop(size_t qid);
 
     std::unordered_map<FlowKey, FlowInfo, FlowKeyHash> m_flowInfoTable;
 
@@ -188,6 +208,19 @@ class FlowLinkUsageCollector
     mutable std::shared_mutex m_switchCountMapMutex;
 
     std::shared_ptr<ndtClassifier::Classifier> m_classifier;
+
+    std::vector<std::unique_ptr<SPSCQueue<Packet>>> m_queues;
+    std::vector<std::thread> m_workers;
+    std::atomic_uint32_t m_rr{0}; // round-robin index
+
+    std::atomic_uint64_t receivedPacketNumFromSocket{0};
+    std::atomic_uint64_t addresedSampleNum{0};
+
+    mutable std::shared_mutex m_counterReportsMutex;
+    mutable std::shared_mutex m_allPathMapMutex;
+    mutable std::shared_mutex m_topologyMutex;
+    std::atomic_uint64_t droppedPackets{0};
+    std::atomic<uint64_t> m_sockOvflDrops{0};
 };
 
 } // namespace sflow

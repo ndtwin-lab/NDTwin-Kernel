@@ -2115,5 +2115,137 @@ Returned when an unknown exception type is thrown.
 ```
 
 
+## 30. GET /ndt/get_detected_top_k_flow_data
+### Description
+Returns detailed information about the Top-K active flows observed by the network system (sFlow), including their estimated sending rates, timestamps, protocol type, and the full path taken across the network.
+
+The returned list is sorted in descending order by:
+`estimated_packet_rate_in_the_proceeding_1sec_timeslot`.
+
+**Note:** For ICMP packets, the src_port field represents the ICMP type, and the dst_port field represents the ICMP code.
+
+**Note:** src_ip/dst_ip are in network order.
+
+### Request
+* Method: **GET**
+### Response
+#### Success
+* Status: **200 OK**
+```json
+[
+    {
+        "dst_ip": 16885952,
+        "dst_port": 55367,
+        "estimated_flow_sending_rate_bps_in_the_last_sec": 1712000,
+        "estimated_flow_sending_rate_bps_in_the_proceeding_1sec_timeslot": 1817600,
+        "estimated_packet_rate_in_the_last_sec": 3000,
+        "estimated_packet_rate_in_the_proceeding_1sec_timeslot": 3200,
+        "first_sampled_time": "2025-08-22 10:13:12",
+        "latest_sampled_time": "2025-08-22 10:13:17",
+        "path": [
+            {
+                "interface": 5,
+                "node": 1359063232
+            },
+            {
+                "interface": 22,
+                "node": 106225808391692
+            },
+            {
+                "interface": 65,
+                "node": 106225808398208
+            },
+            {
+                "interface": 25,
+                "node": 897475217989184
+            },
+            {
+                "interface": 21,
+                "node": 106225808403428
+            },
+            {
+                "interface": 1,
+                "node": 106225808402492
+            },
+            {
+                "interface": 0,
+                "node": 16885952
+            }
+        ],
+        "protocol_id": 6,
+        "src_ip": 1359063232,
+        "src_port": 5201
+    },
+    {
+        "dst_ip": 1359063232,
+        "dst_port": 5201,
+        "estimated_flow_sending_rate_bps_in_the_last_sec": 988560000,
+        "estimated_flow_sending_rate_bps_in_the_proceeding_1sec_timeslot": 962242666,
+        "estimated_packet_rate_in_the_last_sec": 81333,
+        "estimated_packet_rate_in_the_proceeding_1sec_timeslot": 79166,
+        "first_sampled_time": "2025-08-22 10:13:12",
+        "latest_sampled_time": "2025-08-22 10:13:18",
+        "path": [
+            {
+                "interface": 1,
+                "node": 16885952
+            },
+            {
+                "interface": 22,
+                "node": 106225808402492
+            },
+            {
+                "interface": 65,
+                "node": 106225803167444
+            },
+            {
+                "interface": 27,
+                "node": 897475217989184
+            },
+            {
+                "interface": 21,
+                "node": 106225808384924
+            },
+            {
+                "interface": 5,
+                "node": 106225808391692
+            },
+            {
+                "interface": 0,
+                "node": 1359063232
+            }
+        ],
+        "protocol_id": 6,
+        "src_ip": 16885952,
+        "src_port": 55367
+    }
+]
+```
+#### Error
+Returned when the request body is not valid JSON, or JSON fields have invalid types/format.
+* Status: **400 Bad Request**
+```json
+{
+  "error": "JSON parsing error",
+  "details": "<exception message>"
+}
+```
+Returned when an unexpected runtime error occurs (e.g., invalid state, missing dependency, system failure).
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "Internal server error",
+  "details": "<exception message>"
+}
+```
+Returned when an unknown exception type is thrown.
+* Status: **500 Internal Server Error**
+```json
+{
+  "error": "An unknown error occurred"
+}
+```
+
+
 
 

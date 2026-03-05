@@ -8,22 +8,27 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include <array>
+#include <atomic>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/detail/edge.hpp>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <errno.h>
 #include <exception>
 #include <fcntl.h>
 #include <initializer_list>
+#include <linux/net_tstamp.h>
 #include <memory>
 #include <mutex>
 #include <netinet/in.h>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <poll.h>
+#include <pthread.h>
 #include <random>
 #include <set>
 #include <spdlog/spdlog.h>
@@ -34,6 +39,7 @@
 #include <string>
 #include <string_view>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/uio.h>
 #include <thread>
 #include <tuple>
@@ -260,8 +266,28 @@ FlowLinkUsageCollector::populateIfIndexToOfportMap()
     }
 }
 
+static inline pid_t
+gettid_linux()
+{
+    return (pid_t)syscall(SYS_gettid);
+}
+
+static inline pid_t
+getpid_linux()
+{
+    return (pid_t)getpid();
+}
+
 void
-FlowLinkUsageCollector::start()
+log_thread_ids(const char* tag)
+{
+    pid_t pid = getpid_linux();
+    pid_t tid = gettid_linux();
+    SPDLOG_LOGGER_INFO(Logger::instance(), "[{}] pid={} tid={}", tag, pid, tid);
+}
+
+void
+FlowLinkUsageCollector::start(size_t numWorkers, size_t queueCapacity)
 {
     SPDLOG_LOGGER_INFO(Logger::instance(), "Collector Starts Up");
 
@@ -274,13 +300,12 @@ FlowLinkUsageCollector::start()
     fetchAllDestinationPaths();
 
     this->m_running.store(true);
-    m_pktRcvThread = thread(&FlowLinkUsageCollector::run, this);
+    m_pktRcvThread = thread(&FlowLinkUsageCollector::run, this, numWorkers, queueCapacity);
     m_calAvgFlowSendingRateThreadPeriodically =
         thread(&FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically, this);
     m_testCalAvgFlowSendingRatesRandomly =
         thread(&FlowLinkUsageCollector::testCalAvgFlowSendingRatesRandomly, this);
     m_purgeThread = thread(&FlowLinkUsageCollector::purgeIdleFlows, this);
-    // TODO
     m_calFlowPathByQueried = thread(&FlowLinkUsageCollector::calFlowPathByQueried, this);
 }
 
@@ -318,12 +343,117 @@ FlowLinkUsageCollector::stop()
     }
 }
 
-void
-FlowLinkUsageCollector::run()
+struct Packet
 {
-    SPDLOG_LOGGER_INFO(Logger::instance(), "Run");
+    uint16_t len = 0;
+    alignas(4) std::array<char, BUFFER_SIZE> data{};
+};
 
-    // 1. Create UDP socket
+// Single-producer / single-consumer queue
+template <typename T>
+class SPSCQueue
+{
+  public:
+    explicit SPSCQueue(size_t capacity)
+        : m_capacity(capacity)
+    {
+    }
+
+    bool tryPush(T&& item, const std::atomic_bool& running)
+    {
+        if (!running.load(std::memory_order_relaxed))
+        {
+            return false;
+        }
+
+        std::unique_lock<std::mutex> lk(m_mu);
+
+        if (m_q.size() >= m_capacity)
+        {
+            return false;
+        }
+        m_q.emplace_back(std::move(item));
+        lk.unlock();
+        m_cv_not_empty.notify_one();
+        return true;
+    }
+
+    // bool push(T&& item, const std::atomic_bool& running)
+    // {
+    //     // TODO: Count dropped packet, return immediately don't wait here
+    //     std::unique_lock<std::mutex> lk(m_mu);
+    //     m_cv_not_full.wait(lk, [&] { return m_q.size() < m_capacity || !running.load(); });
+    //     if (!running.load())
+    //     {
+    //         return false;
+    //     }
+    //     m_q.emplace_back(std::move(item));
+    //     lk.unlock();
+    //     m_cv_not_empty.notify_one();
+    //     return true;
+    // }
+
+    bool pop(T& out, const std::atomic_bool& running)
+    {
+        std::unique_lock<std::mutex> lk(m_mu);
+        m_cv_not_empty.wait(lk, [&] { return !m_q.empty() || !running.load(); });
+        if (m_q.empty())
+        {
+            return false; // stop and drained
+        }
+        out = std::move(m_q.front());
+        m_q.pop_front();
+        lk.unlock();
+        // m_cv_not_full.notify_one();
+        return true;
+    }
+
+    void notify_all()
+    {
+        m_cv_not_empty.notify_all();
+        // m_cv_not_full.notify_all();
+    }
+
+  private:
+    size_t m_capacity;
+    std::mutex m_mu;
+    std::condition_variable m_cv_not_empty;
+    // std::condition_variable m_cv_not_full;
+    std::deque<T> m_q;
+};
+
+void
+FlowLinkUsageCollector::run(size_t numWorkers, size_t queueCapacity)
+{
+    log_thread_ids("run");
+    SPDLOG_LOGGER_INFO(Logger::instance(), "Run with {} workers", numWorkers);
+
+    if (numWorkers == 0)
+    {
+        numWorkers = 1;
+    }
+    if (queueCapacity == 0)
+    {
+        queueCapacity = 1024;
+    }
+
+    // Create per-worker queues
+    m_queues.clear();
+    m_queues.reserve(numWorkers);
+    for (size_t i = 0; i < numWorkers; ++i)
+    {
+        m_queues.emplace_back(std::make_unique<SPSCQueue<Packet>>(queueCapacity));
+    }
+
+    // Spawn workers
+    m_workers.clear();
+    m_workers.reserve(numWorkers);
+    for (size_t i = 0; i < numWorkers; ++i)
+    {
+        m_workers.emplace_back([this, i] { workerLoop(i); });
+    }
+
+    // Create UDP socket
     m_sockfd = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_sockfd < 0)
     {
@@ -331,19 +461,22 @@ FlowLinkUsageCollector::run()
         throw std::runtime_error("Failed to create UDP socket");
     }
 
-    // 2. Increase receive buffer
-    int rcvbuf = 4 * 1024 * 1024;
+    // Increase receive buffer
+    int rcvbuf = 4 * 1024 * 1024; // 4 MB
     setsockopt(m_sockfd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
 
-    // 3. Allow address reuse
+    // Allow address reuse
     int reuse = 1;
     setsockopt(m_sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
-    // 4. Non-blocking mode
+    int one = 1;
+    setsockopt(m_sockfd, SOL_SOCKET, SO_RXQ_OVFL, &one, sizeof(one));
+
+    // Non-blocking mode
     int flags = fcntl(m_sockfd, F_GETFL, 0);
     fcntl(m_sockfd, F_SETFL, flags | O_NONBLOCK);
 
-    // 5. Bind
+    // Bind
     sockaddr_in bindAddr{};
     bindAddr.sin_family = AF_INET;
     bindAddr.sin_port = htons(SFLOW_PORT);
@@ -357,13 +490,14 @@ FlowLinkUsageCollector::run()
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "Listening for sFlow on UDP port {}", SFLOW_PORT);
 
-    // 6. Prepare recvmmsg structures
+    // Prepare recvmmsg structures
     constexpr int BATCH_SIZE = 32;
     std::vector<std::array<char, BUFFER_SIZE>> buffers(BATCH_SIZE);
     std::vector<iovec> iov(BATCH_SIZE);
     std::vector<mmsghdr> msgs(BATCH_SIZE);
     std::vector<sockaddr_in> srcAddrs(BATCH_SIZE);
     std::vector<socklen_t> addrLens(BATCH_SIZE, sizeof(sockaddr_in));
+    std::vector<std::array<char, CMSG_SPACE(sizeof(uint32_t))>> ctrls(BATCH_SIZE);
 
     for (int i = 0; i < BATCH_SIZE; ++i)
     {
@@ -373,19 +507,19 @@ FlowLinkUsageCollector::run()
         msgs[i].msg_hdr.msg_iovlen = 1;
         msgs[i].msg_hdr.msg_name = &srcAddrs[i];
         msgs[i].msg_hdr.msg_namelen = addrLens[i];
-        msgs[i].msg_hdr.msg_control = nullptr;
-        msgs[i].msg_hdr.msg_controllen = 0;
+        msgs[i].msg_hdr.msg_control = ctrls[i].data();
+        msgs[i].msg_hdr.msg_controllen = ctrls[i].size();
         msgs[i].msg_hdr.msg_flags = 0;
         msgs[i].msg_len = 0;
     }
 
-    // 7. Main loop: poll with timeout, then recvmmsg
+    // Main loop: poll without timeout, then recvmmsg
     struct pollfd pfd
     {
         m_sockfd, POLLIN, 0
     };
 
-    const int POLL_TIMEOUT_MS = 1000;
+    const int POLL_TIMEOUT_MS = 0;
     while (m_running.load())
     {
         int ret = poll(&pfd, 1, POLL_TIMEOUT_MS);
@@ -420,24 +554,139 @@ FlowLinkUsageCollector::run()
 
         for (int i = 0; i < received; ++i)
         {
-            if (msgs[i].msg_len > 0)
+            if (msgs[i].msg_len == 0)
             {
-                handlePacket(buffers[i].data());
+                // reset for reuse
+                msgs[i].msg_hdr.msg_controllen = ctrls[i].size();
+                msgs[i].msg_hdr.msg_flags = 0;
+                msgs[i].msg_hdr.msg_namelen = sizeof(sockaddr_in);
+                continue;
             }
+
+            // parse cmsg first
+            for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msgs[i].msg_hdr); cmsg != nullptr;
+                 cmsg = CMSG_NXTHDR(&msgs[i].msg_hdr, cmsg))
+            {
+                if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SO_RXQ_OVFL)
+                {
+                    uint32_t v;
+                    std::memcpy(&v, CMSG_DATA(cmsg), sizeof(v));
+                    uint32_t cur = m_sockOvflDrops.load(std::memory_order_relaxed);
+                    if (v > cur)
+                    {
+                        m_sockOvflDrops.store(v, std::memory_order_relaxed);
+                    }
+                }
+            }
+
+            receivedPacketNumFromSocket.fetch_add(1, std::memory_order_relaxed);
+
+            Packet pkt;
+            pkt.len = static_cast<uint16_t>(std::min<size_t>(msgs[i].msg_len, BUFFER_SIZE));
+            std::memcpy(pkt.data.data(), buffers[i].data(), pkt.len);
+
+            uint32_t rr = m_rr.fetch_add(1, std::memory_order_relaxed);
+            size_t qid = rr % numWorkers;
+
+            if (!m_queues[qid]->tryPush(std::move(pkt), m_running))
+            {
+                if (!m_running.load(std::memory_order_relaxed))
+                {
+                    break;
+                }
+                droppedPackets.fetch_add(1, std::memory_order_relaxed);
+                // Even if app drops, socket ovfl is still captured above
+            }
+
+            // reset for reuse
             msgs[i].msg_len = 0;
+            msgs[i].msg_hdr.msg_controllen = ctrls[i].size();
+            msgs[i].msg_hdr.msg_flags = 0;
             msgs[i].msg_hdr.msg_namelen = sizeof(sockaddr_in);
         }
     }
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "Run loop exiting");
+
+    // Stop workers & join
+    m_running.store(false);
+    for (auto& q : m_queues)
+    {
+        q->notify_all();
+    }
+
+    for (auto& t : m_workers)
+    {
+        if (t.joinable())
+        {
+            t.join();
+        }
+    }
+    m_workers.clear();
+
+    if (m_sockfd >= 0)
+    {
+        ::close(m_sockfd);
+        m_sockfd = -1;
+    }
+
+    SPDLOG_LOGGER_INFO(Logger::instance(), "Run loop existing");
 }
 
-// Destructor and stop() unchanged
+void
+FlowLinkUsageCollector::workerLoop(size_t qid)
+{
+    Packet pkt;
+    while (m_running.load())
+    {
+        if (!m_queues[qid]->pop(pkt, m_running))
+        {
+            break;
+        }
+
+        try
+        {
+            handlePacket(pkt.data.data(), pkt.len);
+        }
+        catch (const std::exception& e)
+        {
+            SPDLOG_LOGGER_ERROR(Logger::instance(),
+                                "worker {} handlePacket exception: {}",
+                                qid,
+                                e.what());
+        }
+        catch (...)
+        {
+            SPDLOG_LOGGER_ERROR(Logger::instance(),
+                                "worker {} handlePacket unknown exception",
+                                qid);
+        }
+    }
+
+    // Drain remaining after stop
+    while (m_queues[qid]->pop(pkt, m_running))
+    {
+        handlePacket(pkt.data.data(), pkt.len);
+    }
+}
 
 void
-FlowLinkUsageCollector::handlePacket(char* buffer)
+FlowLinkUsageCollector::handlePacket(char* buffer, size_t len)
 {
-    uint32_t* data = (uint32_t*)buffer;
+    if (buffer == nullptr)
+    {
+        return;
+    }
+    if (len < 7 * 4)
+    {
+        return; // need at least header up to sampleCount
+    }
+    if ((len % 4) != 0)
+    {
+        return; // sFlow is 32-bit aligned
+    }
+
+    const uint32_t* data = reinterpret_cast<const uint32_t*>(buffer);
 
     uint32_t version = ntohl(data[0]);
 
@@ -532,67 +781,81 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
             // log time
             // utils::logCurrentTimeSystemClock();
 
-            int64_t interval =
-                (now - m_counterReports[agentIpAndPort].lastReportTimestampInMilliseconds) / 1000;
-            if (interval == 0)
+            uint64_t leftIn = 0, leftOut = 0;
+            bool shouldUpdateTopo = false;
+            uint64_t ifSpeedCopy = interfaceSpeed;
             {
-                continue;
+                std::unique_lock<std::shared_mutex> lk(m_counterReportsMutex);
+                auto& st = m_counterReports[agentIpAndPort];
+
+                int64_t interval = (now - st.lastReportTimestampInMilliseconds) / 1000;
+
+                if (interval == 0)
+                {
+                    continue;
+                }
+
+                // Check if this is not the first report
+                if (st.lastReportTimestampInMilliseconds != 0)
+                {
+                    SPDLOG_LOGGER_TRACE(
+                        Logger::instance(),
+                        "Agent Address: {}, Sample Len: {}, Iface Index: {}, Iface Speed: {}",
+                        agentIpStr,
+                        sampleLen,
+                        interfaceIndex,
+                        interfaceSpeed);
+
+                    uint64_t avgIn = 0, avgOut = 0;
+                    bool inNoOverflow = false, outNoOverflow = false;
+
+                    if (inputOctets >= st.lastReceivedInputOctets)
+                    {
+                        uint64_t inputOctetsDiff = inputOctets - st.lastReceivedInputOctets;
+                        avgIn = inputOctetsDiff * 8 / interval; // Calculate average bits per second
+                        inNoOverflow = true;
+                        SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                            "Average Link Usage (In): {}",
+                                            avgIn);
+                    }
+                    if (outputOctets >= st.lastReceivedOutputOctets)
+                    {
+                        uint64_t outputOctetsDiff = outputOctets - st.lastReceivedOutputOctets;
+                        avgOut =
+                            outputOctetsDiff * 8 / interval; // Calculate average bits per second
+                        outNoOverflow = true;
+                        SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                            "Average Link Usage (Out): {}",
+                                            avgOut);
+                    }
+
+                    leftIn = (avgIn > interfaceSpeed) ? 0 : (interfaceSpeed - avgIn);
+                    leftOut = (avgOut > interfaceSpeed) ? 0 : (interfaceSpeed - avgOut);
+
+                    SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                        "left_in in SFlow Collector: {} (bps)",
+                                        leftIn);
+                    SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                        "left_out in SFlow Collector: {} (bps)",
+                                        leftOut);
+
+                    shouldUpdateTopo = (inNoOverflow && outNoOverflow);
+                }
+
+                // Update state for the next calculation
+                st.lastReportTimestampInMilliseconds = now;
+                st.lastReceivedInputOctets = inputOctets;
+                st.lastReceivedOutputOctets = outputOctets;
             }
 
-            // Check if this is not the first report
-            if (m_counterReports[agentIpAndPort].lastReportTimestampInMilliseconds != 0)
+            if (shouldUpdateTopo)
             {
-                SPDLOG_LOGGER_TRACE(
-                    Logger::instance(),
-                    "Agent Address: {}, Sample Len: {}, Iface Index: {}, Iface Speed: {}",
-                    agentIpStr,
-                    sampleLen,
-                    interfaceIndex,
-                    interfaceSpeed);
-
-                uint64_t avgIn = 0, avgOut = 0;
-                bool inNoOverflow = false, outNoOverflow = false;
-
-                if (inputOctets >= m_counterReports[agentIpAndPort].lastReceivedInputOctets)
-                {
-                    uint64_t inputOctetsDiff =
-                        inputOctets - m_counterReports[agentIpAndPort].lastReceivedInputOctets;
-                    avgIn = inputOctetsDiff * 8 / interval; // Calculate average bits per second
-                    inNoOverflow = true;
-                    SPDLOG_LOGGER_TRACE(Logger::instance(), "Average Link Usage (In): {}", avgIn);
-                }
-                if (outputOctets >= m_counterReports[agentIpAndPort].lastReceivedOutputOctets)
-                {
-                    uint64_t outputOctetsDiff =
-                        outputOctets - m_counterReports[agentIpAndPort].lastReceivedOutputOctets;
-                    avgOut = outputOctetsDiff * 8 / interval; // Calculate average bits per second
-                    outNoOverflow = true;
-                    SPDLOG_LOGGER_TRACE(Logger::instance(), "Average Link Usage (Out): {}", avgOut);
-                }
-
-                uint64_t leftIn = (avgIn > interfaceSpeed) ? 0 : (interfaceSpeed - avgIn);
-                uint64_t leftOut = (avgOut > interfaceSpeed) ? 0 : (interfaceSpeed - avgOut);
-
-                SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                    "left_in in SFlow Collector: {} (bps)",
-                                    leftIn);
-                SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                    "left_out in SFlow Collector: {} (bps)",
-                                    leftOut);
-
-                if (inNoOverflow && outNoOverflow)
-                {
-                    m_topologyAndFlowMonitor->updateLinkInfo(agentIpAndPort,
-                                                             leftIn,
-                                                             leftOut,
-                                                             interfaceSpeed);
-                }
+                std::unique_lock<std::shared_mutex> lk(m_topologyMutex);
+                m_topologyAndFlowMonitor->updateLinkInfo(agentIpAndPort,
+                                                         leftIn,
+                                                         leftOut,
+                                                         ifSpeedCopy);
             }
-
-            // Update state for the next calculation
-            m_counterReports[agentIpAndPort].lastReportTimestampInMilliseconds = now;
-            m_counterReports[agentIpAndPort].lastReceivedInputOctets = inputOctets;
-            m_counterReports[agentIpAndPort].lastReceivedOutputOctets = outputOctets;
 
             SPDLOG_LOGGER_TRACE(Logger::instance(), "==========================================\n");
         }
@@ -601,7 +864,6 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
         //================================================================
         else if (sampleType == 1 || sampleType == 3)
         {
-            unique_lock lock(m_flowInfoTableMutex);
             uint32_t sampleLen = ntohl(data[index + 1]);
 
             // 1. Extract flow data. Offsets differ by vendor.
@@ -613,6 +875,10 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
             uint32_t samplingRate = ntohl(data[index + 4]);
 
             uint16_t etherType = 0;
+            uint16_t frag;
+            uint16_t fragOff;
+            bool mf;
+            bool df;
 
             bool isAckPacket = false;
             const uint8_t TCP_ACK_FLAG = 0x10;
@@ -649,6 +915,18 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                     continue;
                 }
 
+                uint32_t w21 = ntohl(data[index + 21]);
+
+                // bytes 6..7 of IPv4 header (flags+fragment offset)
+                frag = (w21 >> 16) & 0xFFFF;
+
+                mf = (frag & 0x2000) != 0; // More fragments
+                df = (frag & 0x4000) != 0; // Don't fragment
+                fragOff = frag & 0x1FFF;   // in 8-byte units
+
+                SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                    "ntohl(data[index + 21]) {}",
+                                    ntohl(data[index + 21]));
                 protocol = ntohl(data[index + 21]) & 0xFF;
                 srcIp = ipFromFrontBack(ntohl(data[index + 22]), ntohl(data[index + 23]));
                 dstIp = ipFromFrontBack(ntohl(data[index + 23]), ntohl(data[index + 24]));
@@ -697,6 +975,13 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                     }
                     continue;
                 }
+
+                uint32_t w25 = ntohl(data[index + 25]);
+                frag = (w25 >> 16) & 0xFFFF;
+
+                mf = (frag & 0x2000) != 0;
+                df = (frag & 0x4000) != 0;
+                fragOff = frag & 0x1FFF; // in 8-byte units
 
                 protocol = ntohl(data[index + 12 + 6 + 7]) & 0xFF;
                 srcIp = ipFromFrontBack(ntohl(data[index + 12 + 6 + 7 + 1]),
@@ -768,23 +1053,41 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                     SPDLOG_LOGGER_TRACE(
                         Logger::instance(),
                         "FLOW SAMPLE in Mininet from Agent {}: {} -> {} (Proto: {}, Len: {}, Input "
-                        "port: {}, Ouput port: {})",
+                        "port: {}, Ouput port: {}, frag: {:#06x})",
                         agentIpStr,
                         utils::ipToString(srcIp),
                         utils::ipToString(dstIp),
                         protocol,
                         frameLength,
                         inputPort,
-                        outputPort);
+                        outputPort,
+                        static_cast<uint32_t>(frag));
                 }
 
                 bool isIngress = (inputPort != 0); // Simple direction check
                 uint32_t relevantPort = isIngress ? inputPort : outputPort;
 
                 SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                    "Flow Sample Recieve Src Ip {}, Dst Ip {}",
+                                    "Flow Sample Recieve Src Ip {}, Dst Ip {}, Src port {}, Dst "
+                                    "port {}, Protocol {}, frag {:#06x}",
                                     utils::ipToString(srcIp),
-                                    utils::ipToString(dstIp));
+                                    utils::ipToString(dstIp),
+                                    srcPort,
+                                    dstPort,
+                                    protocol,
+                                    static_cast<uint32_t>(frag));
+
+                // Drop non-first fragments (they don't have UDP/TCP ports)
+                if (fragOff != 0)
+                {
+                    SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                        "Drop non-first fragment: frag={:#06x} off={} mf={} df={}",
+                                        frag,
+                                        fragOff,
+                                        mf,
+                                        df);
+                    continue;
+                }
 
                 FlowKey key = {};
                 if (protocol != 1)
@@ -800,6 +1103,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
 
                 if (m_mode == utils::MININET)
                 {
+                    std::unique_lock<std::shared_mutex> lk(m_counterReportsMutex);
                     m_counterReports[make_pair(agentIp, relevantPort)]
                         .inputByteCountOnALinkMultiplySampingRate +=
                         uint64_t(frameLength) * samplingRate;
@@ -808,16 +1112,19 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                 auto it = m_flowInfoTable.find(key);
                 if (it != m_flowInfoTable.end()) // Existing flow
                 {
+                    std::unique_lock<std::shared_mutex> lk(m_flowInfoTableMutex);
+                    auto& info = m_flowInfoTable[key];
+
                     // Find flow stasts on an agent
-                    m_flowInfoTable[key].isPureAck = isPureAck;
-                    m_flowInfoTable[key].isAck = isAckPacket;
+                    info.isPureAck = isPureAck;
+                    info.isAck = isAckPacket;
 
                     SPDLOG_LOGGER_TRACE(Logger::instance(),
                                         "Ack?{} PureAck?{} ",
-                                        m_flowInfoTable[key].isAck,
-                                        m_flowInfoTable[key].isPureAck);
+                                        info.isAck,
+                                        info.isPureAck);
 
-                    auto& stats = m_flowInfoTable[key].agentFlowStats[agentKey];
+                    auto& stats = info.agentFlowStats[agentKey];
                     stats.samplingRate = samplingRate;
 
                     if (isIngress)
@@ -835,15 +1142,18 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                     // utils::logCurrentTimeSystemClock();
 
                     stats.packetQueue.push({frameLength, utils::getCurrentTimeMillisSteadyClock()});
-                    m_flowInfoTable[key].endTime = utils::getCurrentTimeMillisSystemClock();
+                    info.endTime = utils::getCurrentTimeMillisSystemClock();
                 }
                 else // New flow
                 {
-                    m_flowInfoTable[key].startTime = utils::getCurrentTimeMillisSystemClock();
-                    m_flowInfoTable[key].endTime = utils::getCurrentTimeMillisSystemClock();
+                    std::unique_lock<std::shared_mutex> lk(m_flowInfoTableMutex);
+                    auto& info = m_flowInfoTable[key];
+
+                    info.startTime = utils::getCurrentTimeMillisSystemClock();
+                    info.endTime = utils::getCurrentTimeMillisSystemClock();
 
                     // Initialize stats for the new flow
-                    auto& stats = m_flowInfoTable[key].agentFlowStats[agentKey];
+                    auto& stats = info.agentFlowStats[agentKey];
                     stats.samplingRate = samplingRate;
                     if (isIngress)
                     {
@@ -868,12 +1178,11 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                                     utils::ipToString(key.dstIP),
                                     m_flowInfoTable[key].endTime);
 
-                // 2. Update the network map using the CORRECT direction
+                // 2. Update the network map
                 if (m_allPathMap.count({key.srcIP, key.dstIP}))
                 {
                     if (isIngress)
                     {
-                        // Use existing logic for ingress flows
                         if (auto edgeOpt =
                                 m_topologyAndFlowMonitor->findReverseEdgeByAgentIpAndPort(
                                     {agentIp, relevantPort}))
@@ -883,8 +1192,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
                     }
                     else
                     { // Egress flow
-                        // Use a NEW function for egress flows that finds the link connected to the
-                        // output port
+                        // Finds the link connected to the output port
                         if (auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByAgentIpAndPort(
                                 {agentIp, relevantPort}))
                         {
@@ -902,6 +1210,8 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
             {
                 index += (sampleLen / 4 + 2);
             }
+
+            addresedSampleNum++;
         }
         //================================================================
         // Handle Unknown Sample Types
@@ -927,6 +1237,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer)
 void
 FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
 {
+    log_thread_ids("calAvgFlowSendingRatesPeriodically");
     while (m_running.load())
     {
         this_thread::sleep_for(chrono::seconds(1));
@@ -1028,6 +1339,7 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
         // Estimate left link bandwidth using flow sample
         if (m_mode == utils::MININET)
         {
+            std::unique_lock<std::shared_mutex> lk(m_counterReportsMutex);
             for (auto& [key, value] : m_counterReports)
             {
                 uint32_t agentIp = key.first;
@@ -1040,7 +1352,6 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                                     inputPort,
                                     counter.inputByteCountOnALinkMultiplySampingRate);
 
-                // TODO[IMPLEMENT]: Gain sampling rate from flow sample
                 // Store to graph
                 auto agentKeyOtherSideOpt =
                     m_topologyAndFlowMonitor->getAgentKeyFromTheOtherSide(key);
@@ -1055,6 +1366,25 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                 value.inputByteCountOnALinkMultiplySampingRate = 0;
             }
         }
+
+        // log socket dropped packet number
+        // uint32_t rxq_ovfl = 0;
+        // socklen_t olen = sizeof(rxq_ovfl);
+        // if (getsockopt(m_sockfd, SOL_SOCKET, SO_RXQ_OVFL, &rxq_ovfl, &olen) == 0)
+        // {
+        //     SPDLOG_LOGGER_INFO(Logger::instance(), "SO_RXQ_OVFL (socket drops) = {}", rxq_ovfl);
+        // }
+        static uint64_t last = 0;
+        uint64_t cur = m_sockOvflDrops.load(std::memory_order_relaxed);
+        SPDLOG_LOGGER_INFO(
+            Logger::instance(),
+            "rx={}, app_drop={}, addressed={}, sock_ovfl_total={}, sock_ovfl_delta={}",
+            receivedPacketNumFromSocket.load(std::memory_order_relaxed),
+            droppedPackets.load(std::memory_order_relaxed),
+            addresedSampleNum.load(std::memory_order_relaxed),
+            cur,
+            (cur >= last ? cur - last : 0));
+        last = cur;
     }
     SPDLOG_LOGGER_INFO(Logger::instance(), "Exiting Loop of calAvgFlowSendingRatesPeriodically");
 }
@@ -1103,7 +1433,6 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesImmediately()
             continue;
         }
 
-        // TODO[IMPLEMENT]: Gain sampling rate from flow sample
         info.estimatedFlowSendingRateImmediately = accumulatedEstimatedBytes * 8 / hopsCounter;
 
         if (info.estimatedFlowSendingRateImmediately >= MICE_FLOW_UNDER_THRESHOLD)
@@ -1114,7 +1443,7 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesImmediately()
         {
             info.isElephantFlowImmediately = false;
         }
-        // TODO[IMPLEMENT]: Gain sampling rate from flow sample
+
         info.estimatedPacketSendingRateImmediately = accumulatedEstimatedBytes / hopsCounter;
 
         SPDLOG_LOGGER_DEBUG(Logger::instance(),
@@ -1130,6 +1459,7 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesImmediately()
 void
 FlowLinkUsageCollector::testCalAvgFlowSendingRatesRandomly()
 {
+    log_thread_ids("testCalAvgFlowSendingRatesRandomly");
     random_device rd;
     mt19937 gen(rd());
     uniform_int_distribution<> dist(500, 2000); // 500ms-2000ms between calls
@@ -1178,6 +1508,7 @@ FlowLinkUsageCollector::ipFromFrontBack(uint32_t ipFront, uint32_t ipBack)
 void
 FlowLinkUsageCollector::purgeIdleFlows()
 {
+    log_thread_ids("purgeIdleFlows");
     while (m_running.load())
     {
         vector<FlowKey> toRemove;
@@ -1209,7 +1540,7 @@ FlowLinkUsageCollector::purgeIdleFlows()
                         Logger::instance(),
                         "m_flowInfoTable[flowKey].estimatedFlowSendingRatePeriodically: "
                         "{}",
-                        m_flowInfoTable[flowKey].estimatedFlowSendingRatePeriodically);
+                        info.estimatedFlowSendingRatePeriodically);
                 }
             }
         }
@@ -1265,7 +1596,6 @@ FlowLinkUsageCollector::getFlowInfoJson()
         // {
         //     j["path"].push_back({{"node", node}, {"interface", interface}});
         // }
-        // TODO: Test Classifier
         for (const auto& [node, interface] : flowInfo.flowPath)
         {
             j["path"].push_back({{"node", node}, {"interface", interface}});
@@ -1288,8 +1618,8 @@ FlowLinkUsageCollector::getTopKFlowInfoJson(int k)
     std::sort(flowInfo.begin(),
               flowInfo.end(),
               [](const nlohmann::json& a, const nlohmann::json& b) {
-                  return a["estimated_flow_sending_rate_bps_in_the_last_sec"].get<uint64_t>() >
-                         b["estimated_flow_sending_rate_bps_in_the_last_sec"].get<uint64_t>();
+                  return a["estimated_packet_rate_in_the_proceeding_1sec_timeslot"].get<uint64_t>() >
+                         b["estimated_packet_rate_in_the_proceeding_1sec_timeslot"].get<uint64_t>();
               });
 
     nlohmann::json topKFlows = nlohmann::json::array();
@@ -1592,6 +1922,7 @@ FlowLinkUsageCollector::getPathBetweenHostsJson(const std::string& srcHostName,
 void
 FlowLinkUsageCollector::calFlowPathByQueried()
 {
+    log_thread_ids("calFlowPathByQueried");
     using MapT = std::remove_reference_t<decltype(m_flowInfoTable)>;
     using FlowInfoKey = typename MapT::key_type;
 
