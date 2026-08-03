@@ -208,6 +208,7 @@ struct FlowInfo
     bool isAck = false;
     bool isPureAck = false;
     Path flowPath;
+    uint64_t avgNonZeroHopCumulativeByteCount = 0;
 };
 
 template <typename T>

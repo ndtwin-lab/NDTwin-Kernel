@@ -68,6 +68,14 @@ FlowLinkUsageCollector::FlowLinkUsageCollector(
       m_mode(static_cast<utils::DeploymentMode>(mode)),
       m_classifier(classifier)
 {
+    constexpr size_t expectedTotalFlows = 65536;
+    constexpr size_t perShardReserve =
+        (expectedTotalFlows + FLOW_TABLE_SHARD_COUNT - 1) / FLOW_TABLE_SHARD_COUNT;
+
+    for (auto& shard : m_flowInfoTableShards)
+    {
+        shard.table.reserve(perShardReserve);
+    }
 }
 
 FlowLinkUsageCollector::~FlowLinkUsageCollector()
@@ -301,12 +309,13 @@ FlowLinkUsageCollector::start(size_t numWorkers, size_t queueCapacity)
 
     this->m_running.store(true);
     m_pktRcvThread = thread(&FlowLinkUsageCollector::run, this, numWorkers, queueCapacity);
+    // TODO
     m_calAvgFlowSendingRateThreadPeriodically =
         thread(&FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically, this);
-    m_testCalAvgFlowSendingRatesRandomly =
-        thread(&FlowLinkUsageCollector::testCalAvgFlowSendingRatesRandomly, this);
+    // m_testCalAvgFlowSendingRatesRandomly =
+    //     thread(&FlowLinkUsageCollector::testCalAvgFlowSendingRatesRandomly, this);
     m_purgeThread = thread(&FlowLinkUsageCollector::purgeIdleFlows, this);
-    m_calFlowPathByQueried = thread(&FlowLinkUsageCollector::calFlowPathByQueried, this);
+    // m_calFlowPathByQueried = thread(&FlowLinkUsageCollector::calFlowPathByQueried, this);
 }
 
 void
@@ -316,11 +325,6 @@ FlowLinkUsageCollector::stop()
 
     SPDLOG_LOGGER_INFO(Logger::instance(), "Collector Stops");
 
-    if (m_sockfd != -1)
-    {
-        ::close(m_sockfd);
-        m_sockfd = -1;
-    }
     if (m_pktRcvThread.joinable())
     {
         m_pktRcvThread.join();
@@ -378,21 +382,6 @@ class SPSCQueue
         return true;
     }
 
-    // bool push(T&& item, const std::atomic_bool& running)
-    // {
-    //     // TODO: Count dropped packet, return immediately don't wait here
-    //     std::unique_lock<std::mutex> lk(m_mu);
-    //     m_cv_not_full.wait(lk, [&] { return m_q.size() < m_capacity || !running.load(); });
-    //     if (!running.load())
-    //     {
-    //         return false;
-    //     }
-    //     m_q.emplace_back(std::move(item));
-    //     lk.unlock();
-    //     m_cv_not_empty.notify_one();
-    //     return true;
-    // }
-
     bool pop(T& out, const std::atomic_bool& running)
     {
         std::unique_lock<std::mutex> lk(m_mu);
@@ -404,21 +393,18 @@ class SPSCQueue
         out = std::move(m_q.front());
         m_q.pop_front();
         lk.unlock();
-        // m_cv_not_full.notify_one();
         return true;
     }
 
     void notify_all()
     {
         m_cv_not_empty.notify_all();
-        // m_cv_not_full.notify_all();
     }
 
   private:
     size_t m_capacity;
     std::mutex m_mu;
     std::condition_variable m_cv_not_empty;
-    // std::condition_variable m_cv_not_full;
     std::deque<T> m_q;
 };
 
@@ -636,6 +622,7 @@ FlowLinkUsageCollector::run(size_t numWorkers, size_t queueCapacity)
 void
 FlowLinkUsageCollector::workerLoop(size_t qid)
 {
+    log_thread_ids("workerLoop");
     Packet pkt;
     while (m_running.load())
     {
@@ -708,6 +695,7 @@ FlowLinkUsageCollector::handlePacket(char* buffer, size_t len)
     for (uint32_t i = 0; i < sampleCount; i++)
     {
         uint32_t sampleType = ntohl(data[index]);
+        SPDLOG_LOGGER_TRACE(Logger::instance(), "Sample Type: {}", sampleType);
         //================================================================
         // Handle Counter Samples (Brocade Type 2 and HPE Type 4)
         //================================================================
@@ -1109,97 +1097,101 @@ FlowLinkUsageCollector::handlePacket(char* buffer, size_t len)
                         uint64_t(frameLength) * samplingRate;
                 }
 
-                auto it = m_flowInfoTable.find(key);
-                if (it != m_flowInfoTable.end()) // Existing flow
                 {
-                    std::unique_lock<std::shared_mutex> lk(m_flowInfoTableMutex);
-                    auto& info = m_flowInfoTable[key];
+                    auto& shard = getFlowShard(key);
+                    std::unique_lock<std::shared_mutex> lk(shard.mutex);
 
-                    // Find flow stasts on an agent
-                    info.isPureAck = isPureAck;
-                    info.isAck = isAckPacket;
-
-                    SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                        "Ack?{} PureAck?{} ",
-                                        info.isAck,
-                                        info.isPureAck);
-
-                    auto& stats = info.agentFlowStats[agentKey];
-                    stats.samplingRate = samplingRate;
-
-                    if (isIngress)
+                    auto it = shard.table.find(key);
+                    if (it != shard.table.end()) // Existing flow
                     {
-                        stats.ingressByteCountCurrent += uint64_t(frameLength);
-                        stats.ingresspacketCountCurrent += 1;
+                        auto& info = it->second;
+
+                        // Find flow stasts on an agent
+                        info.isPureAck = isPureAck;
+                        info.isAck = isAckPacket;
+
+                        SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                            "Ack?{} PureAck?{} ",
+                                            info.isAck,
+                                            info.isPureAck);
+
+                        auto& stats = info.agentFlowStats[agentKey];
+                        stats.samplingRate = samplingRate;
+
+                        if (isIngress)
+                        {
+                            stats.ingressByteCountCurrent += uint64_t(frameLength);
+                            stats.ingresspacketCountCurrent += 1;
+                        }
+                        else
+                        {
+                            stats.egressByteCountCurrent += uint64_t(frameLength);
+                            stats.egresspacketCountCurrent += 1;
+                        }
+
+                        // log time
+                        // utils::logCurrentTimeSystemClock();
+
+                        stats.packetQueue.push(
+                            {frameLength, utils::getCurrentTimeMillisSteadyClock()});
+                        info.endTime = utils::getCurrentTimeMillisSystemClock();
                     }
-                    else
+                    else // New flow
                     {
-                        stats.egressByteCountCurrent += uint64_t(frameLength);
-                        stats.egresspacketCountCurrent += 1;
+                        auto [newIt, inserted] = shard.table.emplace(key, FlowInfo{});
+                        auto& info = newIt->second;
+
+                        info.startTime = utils::getCurrentTimeMillisSystemClock();
+                        info.endTime = info.startTime;
+                        info.isPureAck = isPureAck;
+                        info.isAck = isAckPacket;
+
+                        // Initialize stats for the new flow
+                        auto& stats = info.agentFlowStats[agentKey];
+                        stats.samplingRate = samplingRate;
+
+                        if (isIngress)
+                        {
+                            stats.ingressByteCountCurrent = uint64_t(frameLength);
+                            stats.egressByteCountCurrent = 0;
+                            stats.ingresspacketCountCurrent = 1;
+                            stats.egresspacketCountCurrent = 0;
+                        }
+                        else
+                        {
+                            stats.egressByteCountCurrent = uint64_t(frameLength);
+                            stats.ingressByteCountCurrent = 0;
+                            stats.egresspacketCountCurrent = 1;
+                            stats.ingresspacketCountCurrent = 0;
+                        }
+                        stats.packetQueue.push(
+                            {frameLength, utils::getCurrentTimeMillisSteadyClock()});
                     }
-
-                    // log time
-                    // utils::logCurrentTimeSystemClock();
-
-                    stats.packetQueue.push({frameLength, utils::getCurrentTimeMillisSteadyClock()});
-                    info.endTime = utils::getCurrentTimeMillisSystemClock();
                 }
-                else // New flow
-                {
-                    std::unique_lock<std::shared_mutex> lk(m_flowInfoTableMutex);
-                    auto& info = m_flowInfoTable[key];
-
-                    info.startTime = utils::getCurrentTimeMillisSystemClock();
-                    info.endTime = utils::getCurrentTimeMillisSystemClock();
-
-                    // Initialize stats for the new flow
-                    auto& stats = info.agentFlowStats[agentKey];
-                    stats.samplingRate = samplingRate;
-                    if (isIngress)
-                    {
-                        stats.ingressByteCountCurrent = uint64_t(frameLength);
-                        stats.egressByteCountCurrent = 0;
-                        stats.ingresspacketCountCurrent = 1;
-                        stats.egresspacketCountCurrent = 0;
-                    }
-                    else
-                    {
-                        stats.egressByteCountCurrent = uint64_t(frameLength);
-                        stats.ingressByteCountCurrent = 0;
-                        stats.egresspacketCountCurrent = 1;
-                        stats.ingresspacketCountCurrent = 0;
-                    }
-                    stats.packetQueue.push({frameLength, utils::getCurrentTimeMillisSteadyClock()});
-                }
-
-                SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                    "Flow Table Entry Updated for {} -> {}. End Time: {}",
-                                    utils::ipToString(key.srcIP),
-                                    utils::ipToString(key.dstIP),
-                                    m_flowInfoTable[key].endTime);
 
                 // 2. Update the network map
-                if (m_allPathMap.count({key.srcIP, key.dstIP}))
-                {
-                    if (isIngress)
-                    {
-                        if (auto edgeOpt =
-                                m_topologyAndFlowMonitor->findReverseEdgeByAgentIpAndPort(
-                                    {agentIp, relevantPort}))
-                        {
-                            m_topologyAndFlowMonitor->touchEdgeFlow(edgeOpt.value(), key);
-                        }
-                    }
-                    else
-                    { // Egress flow
-                        // Finds the link connected to the output port
-                        if (auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByAgentIpAndPort(
-                                {agentIp, relevantPort}))
-                        {
-                            m_topologyAndFlowMonitor->touchEdgeFlow(edgeOpt.value(), key);
-                        }
-                    }
-                }
+                // TODO
+                // if (m_allPathMap.count({key.srcIP, key.dstIP}))
+                // {
+                //     if (isIngress)
+                //     {
+                //         if (auto edgeOpt =
+                //                 m_topologyAndFlowMonitor->findReverseEdgeByAgentIpAndPort(
+                //                     {agentIp, relevantPort}))
+                //         {
+                //             m_topologyAndFlowMonitor->touchEdgeFlow(edgeOpt.value(), key);
+                //         }
+                //     }
+                //     else
+                //     { // Egress flow
+                //         // Finds the link connected to the output port
+                //         if (auto edgeOpt = m_topologyAndFlowMonitor->findEdgeByAgentIpAndPort(
+                //                 {agentIp, relevantPort}))
+                //         {
+                //             m_topologyAndFlowMonitor->touchEdgeFlow(edgeOpt.value(), key);
+                //         }
+                //     }
+                // }
             }
             // Adjust offset index for MININET
             if (m_mode == utils::MININET)
@@ -1212,6 +1204,138 @@ FlowLinkUsageCollector::handlePacket(char* buffer, size_t len)
             }
 
             addresedSampleNum++;
+        }
+        //================================================================
+        // Handle Custom Flow Sample (sampleType == 5)
+        //================================================================
+        else if (sampleType == 5)
+        {
+            uint8_t* ptr = reinterpret_cast<uint8_t*>(buffer) + index * 4;
+
+            uint32_t sampleLen = ntohl(*(uint32_t*)(ptr + 4));
+
+            uint16_t inputPort = ntohs(*(uint16_t*)(ptr + 8));
+            uint16_t outputPort = ntohs(*(uint16_t*)(ptr + 10));
+
+            uint32_t samplingRate = ntohl(*(uint32_t*)(ptr + 12));
+
+            uint32_t etherType = ntohl(*(uint32_t*)(ptr + 16)) & 0xFFFF;
+
+            uint16_t frameLength = ntohs(*(uint16_t*)(ptr + 20));
+            uint16_t protocol = ntohs(*(uint16_t*)(ptr + 22));
+
+            uint32_t srcIp = (*(uint32_t*)(ptr + 24));
+            uint32_t dstIp = (*(uint32_t*)(ptr + 28));
+
+            uint16_t frag = ntohs(*(uint16_t*)(ptr + 32));
+            uint16_t tcpFlag = ntohs(*(uint16_t*)(ptr + 34));
+
+            uint16_t srcPort = ntohs(*(uint16_t*)(ptr + 36));
+            uint16_t dstPort = ntohs(*(uint16_t*)(ptr + 38));
+
+            uint16_t fragOff = frag & 0x1FFF;
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                "Custom Sample5: sampleLen={} index={}",
+                                sampleLen,
+                                index);
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                "Ports: input={} output={}",
+                                inputPort,
+                                outputPort);
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(), "samplingRate={}", samplingRate);
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(), "etherType=0x{:04x}", etherType);
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                "frameLength={} protocol={}",
+                                frameLength,
+                                protocol);
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                "srcIp={} dstIp={}",
+                                utils::ipToString(srcIp),
+                                utils::ipToString(dstIp));
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(), "srcPort={} dstPort={}", srcPort, dstPort);
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                "frag=0x{:04x} fragOff={} tcpFlag=0x{:02x}",
+                                frag,
+                                fragOff,
+                                tcpFlag);
+
+            if (etherType != 0x0800)
+            {
+                SPDLOG_LOGGER_WARN(Logger::instance(), "Non IPv4 packet");
+            }
+
+            bool isAckPacket = false;
+
+            if (protocol == 6 && (tcpFlag & 0x10))
+            {
+                isAckPacket = true;
+            }
+
+            bool isPureAck = false;
+
+            if (protocol == 6 && isAckPacket && frameLength < 80)
+            {
+                isPureAck = true;
+            }
+
+            bool isIngress = (inputPort != 0);
+            uint32_t relevantPort = isIngress ? inputPort : outputPort;
+
+            FlowKey key;
+
+            if (protocol != 1)
+            {
+                key = {srcIp, dstIp, srcPort, dstPort, static_cast<uint8_t>(protocol)};
+            }
+            else
+            {
+                key = {srcIp, dstIp, srcPort, dstPort, static_cast<uint8_t>(protocol)};
+            }
+
+            AgentKey agentKey = {agentIp, relevantPort};
+
+            auto& shard = getFlowShard(key);
+            std::unique_lock<std::shared_mutex> lk(shard.mutex);
+
+            auto [it, inserted] = shard.table.try_emplace(key, FlowInfo{});
+            auto& info = it->second;
+
+            if (inserted)
+            {
+                info.startTime = utils::getCurrentTimeMillisSystemClock();
+            }
+
+            info.isAck = isAckPacket;
+            info.isPureAck = isPureAck;
+
+            auto& stats = info.agentFlowStats[agentKey];
+            stats.samplingRate = samplingRate;
+
+            if (isIngress)
+            {
+                stats.ingressByteCountCurrent += frameLength;
+                stats.ingresspacketCountCurrent++;
+            }
+            else
+            {
+                stats.egressByteCountCurrent += frameLength;
+                stats.egresspacketCountCurrent++;
+            }
+
+            // TODO
+            // stats.packetQueue.push({frameLength, utils::getCurrentTimeMillisSteadyClock()});
+
+            info.endTime = utils::getCurrentTimeMillisSystemClock();
+
+            index += (sampleLen / 4);
         }
         //================================================================
         // Handle Unknown Sample Types
@@ -1238,18 +1362,25 @@ void
 FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
 {
     log_thread_ids("calAvgFlowSendingRatesPeriodically");
+
     while (m_running.load())
     {
         this_thread::sleep_for(chrono::seconds(1));
 
-        // Estimate average flow sending rate
+        for (auto& shard : m_flowInfoTableShards)
         {
-            unique_lock lock(m_flowInfoTableMutex);
-            for (auto& [flowKey, info] : m_flowInfoTable)
+            std::unique_lock<std::shared_mutex> lk(shard.mutex);
+
+            for (auto& [flowKey, info] : shard.table)
             {
                 uint64_t avgFlowSendingRateTemp = 0;
                 uint64_t avgPacketSendingRateTemp = 0;
                 int hopsCounter = 0;
+
+                // --- calculate average cumulative byte count across non-zero hops ---
+                uint64_t cumulativeByteCountSumNonZero = 0;
+                int nonZeroCumulativeHopCount = 0;
+
                 for (auto& [agentKey, stats] : info.agentFlowStats)
                 {
                     // --- 1. CALCULATE ALL RATES FOR THE CURRENT INTERVAL ---
@@ -1292,6 +1423,13 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                         hopsCounter++;
                     }
 
+                    // --- AGGREGATE CUMULATIVE BYTE COUNTS ON NON-ZERO HOPS ---
+                    if (byte_count_current != 0)
+                    {
+                        cumulativeByteCountSumNonZero += (byte_count_current * currentSamplingRate);
+                        nonZeroCumulativeHopCount++;
+                    }
+
                     // --- 3. UPDATE STATE FOR THE *NEXT* INTERVAL ---
                     // All state updates are done together at the end.
 
@@ -1301,8 +1439,22 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                     stats.egresspacketCountPrevious = stats.egresspacketCountCurrent;
                 }
 
+                // --- STORE AVERAGE CUMULATIVE BYTE COUNT ACROSS NON-ZERO HOPS ---
+                if (nonZeroCumulativeHopCount > 0)
+                {
+                    info.avgNonZeroHopCumulativeByteCount =
+                        cumulativeByteCountSumNonZero / nonZeroCumulativeHopCount;
+                }
+                else
+                {
+                    info.avgNonZeroHopCumulativeByteCount = 0;
+                }
+
                 if (hopsCounter == 0)
                 {
+                    // No active hop in this interval, so explicitly clear periodic rates.
+                    info.estimatedFlowSendingRatePeriodically = 0;
+                    info.estimatedPacketSendingRatePeriodically = 0;
                     continue;
                 }
 
@@ -1333,6 +1485,9 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
                 SPDLOG_LOGGER_TRACE(Logger::instance(),
                                     "Estimated flow sending rate (Periodically): {}",
                                     estimatedFlowSendingRatePeriodically);
+                SPDLOG_LOGGER_TRACE(Logger::instance(),
+                                    "Average cumulative byte count across non-zero hops: {}",
+                                    info.avgNonZeroHopCumulativeByteCount);
             }
         }
 
@@ -1367,13 +1522,6 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
             }
         }
 
-        // log socket dropped packet number
-        // uint32_t rxq_ovfl = 0;
-        // socklen_t olen = sizeof(rxq_ovfl);
-        // if (getsockopt(m_sockfd, SOL_SOCKET, SO_RXQ_OVFL, &rxq_ovfl, &olen) == 0)
-        // {
-        //     SPDLOG_LOGGER_INFO(Logger::instance(), "SO_RXQ_OVFL (socket drops) = {}", rxq_ovfl);
-        // }
         static uint64_t last = 0;
         uint64_t cur = m_sockOvflDrops.load(std::memory_order_relaxed);
         SPDLOG_LOGGER_INFO(
@@ -1392,67 +1540,72 @@ FlowLinkUsageCollector::calAvgFlowSendingRatesPeriodically()
 void
 FlowLinkUsageCollector::calAvgFlowSendingRatesImmediately()
 {
-    unique_lock lock(m_flowInfoTableMutex);
-    for (auto& [flowKey, info] : m_flowInfoTable)
+    for (auto& shard : m_flowInfoTableShards)
     {
-        uint64_t accumulatedEstimatedBytes = 0;
-        uint64_t accumulatedEstimatedPackets = 0;
+        std::unique_lock<std::shared_mutex> lk(shard.mutex);
 
-        int hopsCounter = 0;
-
-        for (auto& [link_key, stats] : info.agentFlowStats)
+        for (auto& [flowKey, info] : shard.table)
         {
-            AutoRefreshQueue& packetQueueTemp = stats.packetQueue;
-            uint32_t currentSamplingRate = (stats.samplingRate > 0) ? stats.samplingRate : 1;
-            if (packetQueueTemp.size())
+            uint64_t accumulatedEstimatedBytes = 0;
+            uint64_t accumulatedEstimatedPackets = 0;
+
+            int hopsCounter = 0;
+
+            for (auto& [link_key, stats] : info.agentFlowStats)
             {
-                hopsCounter++;
+                AutoRefreshQueue& packetQueueTemp = stats.packetQueue;
+                uint32_t currentSamplingRate = (stats.samplingRate > 0) ? stats.samplingRate : 1;
+                if (packetQueueTemp.size())
+                {
+                    hopsCounter++;
 
-                uint64_t estimatedBytes =
-                    static_cast<uint64_t>(packetQueueTemp.getSum()) * currentSamplingRate;
-                uint64_t estimatedPackets =
-                    static_cast<uint64_t>(packetQueueTemp.size()) * currentSamplingRate;
+                    uint64_t estimatedBytes =
+                        static_cast<uint64_t>(packetQueueTemp.getSum()) * currentSamplingRate;
+                    uint64_t estimatedPackets =
+                        static_cast<uint64_t>(packetQueueTemp.size()) * currentSamplingRate;
 
-                accumulatedEstimatedBytes += estimatedBytes;
-                accumulatedEstimatedPackets += estimatedPackets;
-                SPDLOG_LOGGER_TRACE(Logger::instance(),
-                                    "accumulatedEstimatedBytes {}, accumulatedEstimatedPackets {}",
-                                    accumulatedEstimatedBytes,
-                                    accumulatedEstimatedPackets);
+                    accumulatedEstimatedBytes += estimatedBytes;
+                    accumulatedEstimatedPackets += estimatedPackets;
+                    SPDLOG_LOGGER_TRACE(
+                        Logger::instance(),
+                        "accumulatedEstimatedBytes {}, accumulatedEstimatedPackets {}",
+                        accumulatedEstimatedBytes,
+                        accumulatedEstimatedPackets);
+                }
             }
+
+            SPDLOG_LOGGER_TRACE(Logger::instance(), "Hops Counter: {}", hopsCounter);
+
+            if (hopsCounter == 0)
+            {
+                // No activity, so clear the rates and continue
+                info.estimatedFlowSendingRateImmediately = 0;
+                info.estimatedPacketSendingRateImmediately = 0;
+                info.isElephantFlowImmediately = false;
+                continue;
+            }
+
+            info.estimatedFlowSendingRateImmediately = accumulatedEstimatedBytes * 8 / hopsCounter;
+
+            if (info.estimatedFlowSendingRateImmediately >= MICE_FLOW_UNDER_THRESHOLD)
+            {
+                info.isElephantFlowImmediately = true;
+            }
+            else
+            {
+                info.isElephantFlowImmediately = false;
+            }
+
+            info.estimatedPacketSendingRateImmediately = accumulatedEstimatedPackets / hopsCounter;
+
+            SPDLOG_LOGGER_DEBUG(Logger::instance(),
+                                "FlowKey: {} -> {}",
+                                utils::ipToString(flowKey.srcIP),
+                                utils::ipToString(flowKey.dstIP));
+            SPDLOG_LOGGER_DEBUG(Logger::instance(),
+                                "Estimated packet sending rate (Immediately): {}",
+                                info.estimatedFlowSendingRateImmediately);
         }
-
-        SPDLOG_LOGGER_TRACE(Logger::instance(), "Hops Counter: {}", hopsCounter);
-
-        if (hopsCounter == 0)
-        {
-            // No activity, so clear the rates and continue
-            info.estimatedFlowSendingRateImmediately = 0;
-            info.estimatedPacketSendingRateImmediately = 0;
-            info.isElephantFlowImmediately = false;
-            continue;
-        }
-
-        info.estimatedFlowSendingRateImmediately = accumulatedEstimatedBytes * 8 / hopsCounter;
-
-        if (info.estimatedFlowSendingRateImmediately >= MICE_FLOW_UNDER_THRESHOLD)
-        {
-            info.isElephantFlowImmediately = true;
-        }
-        else
-        {
-            info.isElephantFlowImmediately = false;
-        }
-
-        info.estimatedPacketSendingRateImmediately = accumulatedEstimatedBytes / hopsCounter;
-
-        SPDLOG_LOGGER_DEBUG(Logger::instance(),
-                            "FlowKey: {} -> {}",
-                            utils::ipToString(flowKey.srcIP),
-                            utils::ipToString(flowKey.dstIP));
-        SPDLOG_LOGGER_DEBUG(Logger::instance(),
-                            "Estimated packet sending rate (Immediately): {}",
-                            info.estimatedFlowSendingRateImmediately);
     }
 }
 
@@ -1509,50 +1662,55 @@ void
 FlowLinkUsageCollector::purgeIdleFlows()
 {
     log_thread_ids("purgeIdleFlows");
+
     while (m_running.load())
     {
-        vector<FlowKey> toRemove;
+        int64_t now = utils::getCurrentTimeMillisSystemClock();
+
+        for (auto& shard : m_flowInfoTableShards)
         {
-            shared_lock lock(m_flowInfoTableMutex);
-            int64_t now = utils::getCurrentTimeMillisSystemClock();
+            vector<FlowKey> toRemove;
 
-            for (auto& [flowKey, info] : m_flowInfoTable)
             {
-                if (now <= info.endTime)
+                std::shared_lock<std::shared_mutex> lk(shard.mutex);
+                for (auto& [flowKey, info] : shard.table)
                 {
-                    continue;
+                    if (now <= info.endTime)
+                    {
+                        continue;
+                    }
+
+                    int64_t idle_time = now - info.endTime;
+                    if (idle_time >= FLOW_IDLE_TIMEOUT)
+                    {
+                        toRemove.push_back(flowKey);
+
+                        SPDLOG_LOGGER_DEBUG(Logger::instance(),
+                                            "Now: {} End Time: {}",
+                                            now,
+                                            info.endTime);
+                        SPDLOG_LOGGER_INFO(Logger::instance(),
+                                           "Flow Key: {} -> {} idles",
+                                           utils::ipToString(flowKey.srcIP),
+                                           utils::ipToString(flowKey.dstIP));
+
+                        SPDLOG_LOGGER_DEBUG(Logger::instance(),
+                                            "info.estimatedFlowSendingRatePeriodically: "
+                                            "{}",
+                                            info.estimatedFlowSendingRatePeriodically);
+                    }
                 }
-                int64_t idle_time = now - info.endTime;
-                if (idle_time >= FLOW_IDLE_TIMEOUT)
+            }
+
+            if (!toRemove.empty())
+            {
+                std::unique_lock<std::shared_mutex> lk(shard.mutex);
+                for (const auto& key : toRemove)
                 {
-                    toRemove.push_back(flowKey);
-
-                    SPDLOG_LOGGER_DEBUG(Logger::instance(),
-                                        "Now: {} End Time: {}",
-                                        now,
-                                        info.endTime);
-                    SPDLOG_LOGGER_INFO(Logger::instance(),
-                                       "Flow Key: {} -> {} idles",
-                                       utils::ipToString(flowKey.srcIP),
-                                       utils::ipToString(flowKey.dstIP));
-
-                    SPDLOG_LOGGER_DEBUG(
-                        Logger::instance(),
-                        "m_flowInfoTable[flowKey].estimatedFlowSendingRatePeriodically: "
-                        "{}",
-                        info.estimatedFlowSendingRatePeriodically);
+                    shard.table.erase(key);
                 }
             }
         }
-
-        for (const auto& key : toRemove)
-        {
-            {
-                unique_lock lock(m_flowInfoTableMutex);
-                m_flowInfoTable.erase(key);
-            }
-        }
-
         this_thread::sleep_for(chrono::milliseconds(1000));
     }
 
@@ -1562,46 +1720,60 @@ FlowLinkUsageCollector::purgeIdleFlows()
 unordered_map<FlowKey, FlowInfo, FlowKeyHash>
 FlowLinkUsageCollector::getFlowInfoTable()
 {
-    shared_lock lock(m_flowInfoTableMutex);
-    return m_flowInfoTable;
+    unordered_map<FlowKey, FlowInfo, FlowKeyHash> result;
+
+    for (const auto& shard : m_flowInfoTableShards)
+    {
+        std::shared_lock<std::shared_mutex> lk(shard.mutex);
+        result.insert(shard.table.begin(), shard.table.end());
+    }
+
+    return result;
 }
 
 nlohmann::json
 FlowLinkUsageCollector::getFlowInfoJson()
 {
-    shared_lock lock(m_flowInfoTableMutex);
     nlohmann::json result = nlohmann::json::array();
 
-    for (const auto& [flowKey, flowInfo] : m_flowInfoTable)
+    for (const auto& shard : m_flowInfoTableShards)
     {
-        nlohmann::json j;
+        std::shared_lock<std::shared_mutex> lk(shard.mutex);
 
-        j["src_ip"] = flowKey.srcIP;
-        j["dst_ip"] = flowKey.dstIP;
-        j["src_port"] = flowKey.srcPort;
-        j["dst_port"] = flowKey.dstPort;
-        j["protocol_id"] = flowKey.protocol;
-
-        j["estimated_flow_sending_rate_bps_in_the_proceeding_1sec_timeslot"] =
-            flowInfo.estimatedFlowSendingRatePeriodically;
-        j["estimated_flow_sending_rate_bps_in_the_last_sec"] =
-            flowInfo.estimatedFlowSendingRateImmediately;
-        j["estimated_packet_rate_in_the_proceeding_1sec_timeslot"] =
-            flowInfo.estimatedPacketSendingRatePeriodically;
-        j["estimated_packet_rate_in_the_last_sec"] = flowInfo.estimatedPacketSendingRateImmediately;
-        j["first_sampled_time"] = utils::formatTime(flowInfo.startTime);
-        j["latest_sampled_time"] = utils::formatTime(flowInfo.endTime);
-        j["path"] = nlohmann::json::array();
-        // for (const auto& [node, interface] : m_allPathMap[{flowKey.srcIP, flowKey.dstIP}])
-        // {
-        //     j["path"].push_back({{"node", node}, {"interface", interface}});
-        // }
-        for (const auto& [node, interface] : flowInfo.flowPath)
+        for (const auto& [flowKey, flowInfo] : shard.table)
         {
-            j["path"].push_back({{"node", node}, {"interface", interface}});
-        }
+            nlohmann::json j;
 
-        result.push_back(j);
+            j["src_ip"] = flowKey.srcIP;
+            j["dst_ip"] = flowKey.dstIP;
+            j["src_port"] = flowKey.srcPort;
+            j["dst_port"] = flowKey.dstPort;
+            j["protocol_id"] = flowKey.protocol;
+
+            j["estimated_flow_sending_rate_bps_in_the_proceeding_1sec_timeslot"] =
+                flowInfo.estimatedFlowSendingRatePeriodically;
+            j["estimated_flow_sending_rate_bps_in_the_last_sec"] =
+                flowInfo.estimatedFlowSendingRateImmediately;
+            j["estimated_packet_rate_in_the_proceeding_1sec_timeslot"] =
+                flowInfo.estimatedPacketSendingRatePeriodically;
+            j["estimated_packet_rate_in_the_last_sec"] =
+                flowInfo.estimatedPacketSendingRateImmediately;
+            j["first_sampled_time"] = utils::formatTime(flowInfo.startTime);
+            j["latest_sampled_time"] = utils::formatTime(flowInfo.endTime);
+            j["path"] = nlohmann::json::array();
+            // for (const auto& [node, interface] : m_allPathMap[{flowKey.srcIP, flowKey.dstIP}])
+            // {
+            //     j["path"].push_back({{"node", node}, {"interface", interface}});
+            // }
+            for (const auto& [node, interface] : flowInfo.flowPath)
+            {
+                j["path"].push_back({{"node", node}, {"interface", interface}});
+            }
+
+            j["avg_non_zero_hop_cumulative_byte_count"] = flowInfo.avgNonZeroHopCumulativeByteCount;
+
+            result.push_back(j);
+        }
     }
 
     return result;
@@ -1611,16 +1783,18 @@ nlohmann::json
 FlowLinkUsageCollector::getTopKFlowInfoJson(int k)
 {
     SPDLOG_LOGGER_DEBUG(Logger::instance(), "getTopKFlowInfoJson k={}", k);
-    shared_lock lock(m_flowInfoTableMutex);
+
     nlohmann::json flowInfo = getFlowInfoJson();
+
     SPDLOG_LOGGER_DEBUG(Logger::instance(), "Total flows: {}", flowInfo.size());
 
-    std::sort(flowInfo.begin(),
-              flowInfo.end(),
-              [](const nlohmann::json& a, const nlohmann::json& b) {
-                  return a["estimated_packet_rate_in_the_proceeding_1sec_timeslot"].get<uint64_t>() >
-                         b["estimated_packet_rate_in_the_proceeding_1sec_timeslot"].get<uint64_t>();
-              });
+    std::sort(
+        flowInfo.begin(),
+        flowInfo.end(),
+        [](const nlohmann::json& a, const nlohmann::json& b) {
+            return a["estimated_packet_rate_in_the_proceeding_1sec_timeslot"].get<uint64_t>() >
+                   b["estimated_packet_rate_in_the_proceeding_1sec_timeslot"].get<uint64_t>();
+        });
 
     nlohmann::json topKFlows = nlohmann::json::array();
     for (int i = 0; i < std::min(k, static_cast<int>(flowInfo.size())); ++i)
@@ -1930,16 +2104,17 @@ FlowLinkUsageCollector::calFlowPathByQueried()
     {
         // Snapshot keys under a shared/read lock
         std::vector<FlowInfoKey> keys;
+
+        for (const auto& shard : m_flowInfoTableShards)
         {
-            std::shared_lock<std::shared_mutex> lk(m_flowInfoTableMutex);
-            keys.reserve(m_flowInfoTable.size());
-            for (const auto& kv : m_flowInfoTable)
+            std::shared_lock<std::shared_mutex> lk(shard.mutex);
+            keys.reserve(keys.size() + shard.table.size());
+            for (const auto& kv : shard.table)
             {
                 keys.push_back(kv.first);
             }
         }
 
-        // Compute each path without holding m_flowInfoTableMutex
         for (const auto& flowKey : keys)
         {
             sflow::Path path;
@@ -2050,19 +2225,38 @@ FlowLinkUsageCollector::calFlowPathByQueried()
                 }
             }
 
-            // Commit the result under unique lock (no operator[]; don’t insert)
+            auto& shard = getFlowShard(flowKey);
+            std::unique_lock<std::shared_mutex> lk(shard.mutex);
+            auto it = shard.table.find(flowKey);
+            if (it != shard.table.end())
             {
-                std::unique_lock<std::shared_mutex> lk(m_flowInfoTableMutex);
-                auto it = m_flowInfoTable.find(flowKey);
-                if (it != m_flowInfoTable.end())
-                {
-                    it->second.flowPath = ok ? std::move(path) : sflow::Path{};
-                }
+                it->second.flowPath = ok ? std::move(path) : sflow::Path{};
             }
         }
 
         std::this_thread::sleep_for(std::chrono::microseconds(1000));
     }
+}
+
+size_t
+FlowLinkUsageCollector::getFlowShardIndex(const FlowKey& key) const
+{
+    static_assert((FLOW_TABLE_SHARD_COUNT & (FLOW_TABLE_SHARD_COUNT - 1)) == 0,
+                  "FLOW_TABLE_SHARD_COUNT must be power of two");
+
+    return FlowKeyHash{}(key) & (FLOW_TABLE_SHARD_COUNT - 1);
+}
+
+FlowLinkUsageCollector::FlowTableShard&
+FlowLinkUsageCollector::getFlowShard(const FlowKey& key)
+{
+    return m_flowInfoTableShards[getFlowShardIndex(key)];
+}
+
+const FlowLinkUsageCollector::FlowTableShard&
+FlowLinkUsageCollector::getFlowShard(const FlowKey& key) const
+{
+    return m_flowInfoTableShards[getFlowShardIndex(key)];
 }
 
 } // namespace sflow

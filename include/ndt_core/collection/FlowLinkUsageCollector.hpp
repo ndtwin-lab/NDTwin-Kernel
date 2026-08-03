@@ -2,18 +2,19 @@
 
 #include "common_types/SFlowType.hpp" // for Path, CounterInfo, FlowInfo
 #include "utils/Utils.hpp"            // for DeploymentMode
-#include <atomic>                     // for atomic
-#include <cstdint>                    // for uint32_t
-#include <map>                        // for map
-#include <memory>                     // for shared_ptr
-#include <mutex>                      // for mutex
-#include <nlohmann/json.hpp>          // for json
-#include <shared_mutex>               // for shared_mutex
-#include <string>                     // for string
-#include <thread>                     // for thread
-#include <unordered_map>              // for unordered_map
-#include <utility>                    // for pair
-#include <vector>                     // for vector
+#include <array>
+#include <atomic>            // for atomic
+#include <cstdint>           // for uint32_t
+#include <map>               // for map
+#include <memory>            // for shared_ptr
+#include <mutex>             // for mutex
+#include <nlohmann/json.hpp> // for json
+#include <shared_mutex>      // for shared_mutex
+#include <string>            // for string
+#include <thread>            // for thread
+#include <unordered_map>     // for unordered_map
+#include <utility>           // for pair
+#include <vector>            // for vector
 
 class DeviceConfigurationAndPowerManager; // lines 48-48
 class EventBus;                           // lines 47-47
@@ -159,6 +160,20 @@ class FlowLinkUsageCollector
     json getPathBetweenHostsJson(const std::string& srcHostName, const std::string& dstHostName);
 
   private:
+    static constexpr size_t FLOW_TABLE_SHARD_COUNT = 1024;
+
+    struct FlowTableShard
+    {
+      mutable std::shared_mutex mutex;
+      std::unordered_map<FlowKey, FlowInfo, FlowKeyHash> table;
+    };
+
+    std::array<FlowTableShard, FLOW_TABLE_SHARD_COUNT> m_flowInfoTableShards;
+
+    size_t getFlowShardIndex(const FlowKey& key) const;
+    FlowTableShard& getFlowShard(const FlowKey& key);
+    const FlowTableShard& getFlowShard(const FlowKey& key) const;
+
     inline std::string ourIpToString(uint32_t ipFront, uint32_t ipBack);
     inline uint32_t ipFromFrontBack(uint32_t ipFront, uint32_t ipBack);
     void calAvgFlowSendingRatesPeriodically();

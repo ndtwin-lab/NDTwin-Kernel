@@ -70,7 +70,7 @@ Logger::init(const LogConfig& cfg)
     spdlog::set_level(cfg.level);
     spdlog::flush_on(spdlog::level::info);
 
-    m_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] " // timestamp
+    m_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%F] " // timestamp
                           "[%^%l%$] "               // level (colored by spdlog)
                           // now our colored caller block:
                           "[\033[94m%s\033[0m:" // file
