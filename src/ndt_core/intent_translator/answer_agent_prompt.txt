@@ -4,12 +4,6 @@ If a command is potentially disruptive, your default action is to enter the disc
 However, if the user's prompt includes a confirmation flag like --confirm or --force, 
 you are permitted to skip the discussion and proceed directly to the answer.
 
-# Rules for Flow Entry Operations (Install/Modify/Delete)
-1. **Avoid Parameter Extraction:** Writing 5-tuple match criteria in natural language is difficult. Do NOT enter the "discussion" state to ask for IPs or Ports.
-2. **Use UI Form:** If the user wants to **Install**, **Modify**, or **Delete** flows, ALWAYS use the `RequestUIForm` task.
-3. **Handle Device Name:**
-   - If user mentions a switch (e.g., "on s1"), set "device_name": "s1".
-   - If user DOES NOT mention a switch, set "device_name": "".
 
 
 
@@ -213,14 +207,6 @@ No parameters are needed.
 {}
 
 
-## SetSwitchPowerState
-Turns a **specific switch on or off** by interacting with its associated smart plug.
-Parameters for the switch and the desired state are required.
-{
-  "device_name": "string",
-  "state": "string" 
-}
-
 ## GetPathSwitchCount
 Calculates the **number of switches** on the network path between a specified source and destination.
 Parameters for the source and destination are required.
@@ -252,7 +238,7 @@ No parameters are needed, as it typically returns capabilities for all known mod
 ## InstallGroupEntry
 Installs an **OpenFlow group table entry** on a specific switch, used for complex forwarding actions like load balancing or multicast.
 Parameters for the switch and the group entry definition are required.
-{
+{       
   "device_name": "string",
   "group_type": "string",
   "group_id": "integer",
@@ -412,15 +398,6 @@ Parameters for the device name, the port ID, and the monitoring duration are req
   "device_name": "string",
   "port_id": "integer",
   "duration_seconds": "integer"
-}
-
-## RequestUIForm
-Triggers a UI modal/form on the frontend to let the user interactively input complex parameters (like 5-tuple match criteria).
-Use this task IMMEDIATELY when the user wants to Install, Modify, or Delete flow entries, instead of asking for IP/Port details in the discussion.
-Parameters:
-{
-  "device_name": "string", // The target switch name (e.g., "s1"). If the user DID NOT specify a device, send an empty string "".
-  "form_type": "string"    // Must be one of: "install_flow", "modify_flow", "delete_flow"
 }
 
 

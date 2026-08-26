@@ -315,7 +315,7 @@ FlowLinkUsageCollector::start(size_t numWorkers, size_t queueCapacity)
     // m_testCalAvgFlowSendingRatesRandomly =
     //     thread(&FlowLinkUsageCollector::testCalAvgFlowSendingRatesRandomly, this);
     m_purgeThread = thread(&FlowLinkUsageCollector::purgeIdleFlows, this);
-    // m_calFlowPathByQueried = thread(&FlowLinkUsageCollector::calFlowPathByQueried, this);
+    m_calFlowPathByQueried = thread(&FlowLinkUsageCollector::calFlowPathByQueried, this);
 }
 
 void
@@ -2234,7 +2234,7 @@ FlowLinkUsageCollector::calFlowPathByQueried()
             }
         }
 
-        std::this_thread::sleep_for(std::chrono::microseconds(1000));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
 
