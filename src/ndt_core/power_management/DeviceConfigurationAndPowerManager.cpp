@@ -1200,8 +1200,8 @@ DeviceConfigurationAndPowerManager::openflowTablesUpdateWorker()
                                 e.what());
         }
 
-        // 3. Sleep for 10 seconds (in an interruptible way)
-        for (int i = 0; i < 10; ++i) // 10 * 1s = 10s sleep
+        // 3. Sleep for 1 seconds (in an interruptible way)
+        for (int i = 0; i < 1; ++i) // 1 * 1s = 1s sleep
         {
             if (!m_running.load())
             {
